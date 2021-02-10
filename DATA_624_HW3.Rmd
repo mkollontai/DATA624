@@ -1,0 +1,101 @@
+---
+title: "DATA624 HW3"
+author: "M Kollontai"
+date: "2/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp2)
+```
+
+**Exercise 6.2:** The plastics data set consists of the monthly sales (in thousands) of product A for a plastics manufacturer for five years.
+
+a. Plot the time series of sales of product A. Can you identify seasonal fluctuations and/or a trend-cycle?
+
+```{r 6_2_a}
+autoplot(plastics) + ggtitle('Sales of product A') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The plot suggest an overall upward trend in the data with a monthly seasonality peaking around July and dipping towards February (assuming that 0 on the year is January as opposed to a fiscal calendar)
+
+---
+
+b. Use a classical multiplicative decomposition to calculate the trend-cycle and seasonal indices.
+
+```{r 6_2_b}
+fit_6_2 <- plastics %>% decompose(type="multiplicative") 
+autoplot(fit_6_2) + xlab("Year") +
+  ggtitle("Classical multiplicative decomposition
+    of sales of product A")
+```
+
+---
+
+c. Do the results support the graphical interpretation from part a?
+
+As indicated above, there is a yearly seasonality coupled with an overall upward trend in the data. The remainder does seem to have something of a cyclical component to it, so the basic decomposition isn't capturing the whole story.
+
+---
+
+d. Compute and plot the seasonally adjusted data.
+
+```{r 6_2_d, warning=FALSE}
+autoplot(plastics, series="Data") +
+  autolayer(trendcycle(fit_6_2), series="Trend") +
+  autolayer(seasadj(fit_6_2), series="Seasonally Adjusted") +
+  xlab("Year") + ylab("Sales") +
+  ggtitle("Monthly sales of product A for a plastics manufacturer") +
+  scale_colour_manual(values=c("gray","blue","red"),
+             breaks=c("Data","Seasonally Adjusted","Trend"))
+```
+
+---
+
+e. Change one observation to be an outlier (e.g., add 500 to one observation), and recompute the seasonally adjusted data. What is the effect of the outlier?
+
+```{r 6_2_e, warning=FALSE}
+plastics2 <- plastics
+plastics2[14] <- 1500
+fit_6_2e <- plastics2 %>% decompose(type="multiplicative")
+
+autoplot(plastics2, series="Data") +
+  autolayer(trendcycle(fit_6_2e), series="Trend") +
+  autolayer(seasadj(fit_6_2e), series="Seasonally Adjusted") +
+  xlab("Year") + ylab("Sales") +
+  ggtitle("Monthly sales of product A for a plastics manufacturer (edited)") +
+  scale_colour_manual(values=c("gray","blue","red"),
+             breaks=c("Data","Seasonally Adjusted","Trend"))
+```
+
+Replacing the 14th month with a 1400 sales datapoint has a slight effect on the trend, but the seasonally adjusted data is changed dramatically. In this case not only does it attempt to capture the errant positive spike, but it is also forced to compensate at each dip in the seasonal data to account for the overall increase in the dips in the seasonal data
+
+---
+
+f. Does it make any difference if the outlier is near the end rather than in the middle of the time series?
+
+If we were to add the point towards the end as opposed to the middle, the trend line would also be strongly influenced, skewing it in the direction of the outlier and affecting any forecast we were to make. Depending on where in the seasonal pattern this outlier would fall would determine the impact on the seasonally adjusted data, since matching up with a pea/dip in teh appropriate direction would probably be better captured by the seasonal data (though it would reduce teh accuracy of the magnitudes elsewhere).
+
+---
+
+**Exercise 6.3:** Recall your retail time series data (from Exercise 3 in Section 2.10). Decompose the series using X11. Does it reveal any outliers, or unusual features that you had not noticed previously?
+
+```{r 6_3}
+retaildata <- readxl::read_excel("retail.xlsx", skip=1)
+myts <- ts(retaildata[,"A3349874C"],
+  frequency=12, start=c(1982,4))
+
+library(seasonal)
+fit_6_3 <- myts %>% seas(x11='')
+autoplot(fit_6_3) +
+  ggtitle("X11 decomposition of retail data from Ex.3 of Section 2.10")
+```
+
+This X11 decomposition highlights a few things that I had not noticed previously:
+
+1. There is a sharp dip in the trend around 2010.
+2. This dip in the trend coincides with some strong remainders, creating the strange back-and-forth zigzag we can see in the original data. 
+3. The seasonal data is changig somewhat, but this decomposition shows that the (multiplicative) magnitudes remain very steady until the end of the data where they begin to rise. 
+4. The remainder suggests outliers in 2000 as well as 2010/2011.
