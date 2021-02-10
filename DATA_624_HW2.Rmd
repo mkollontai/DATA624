@@ -1,0 +1,130 @@
+---
+title: "DATA624 HW2"
+author: "M Kollontai"
+date: "2/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp2)
+```
+
+**Exercise 3.1:** For the following series, find an appropriate Box-Cox transformation in order to stabilise the variance.
+
+* `usnetelec`
+* `usgdp`
+* `mcopper`
+* `enplanements`
+
+```{r 3_1_usnetelec}
+autoplot(usnetelec)
+elec_lab <- BoxCox.lambda(usnetelec)
+autoplot(BoxCox(usnetelec,elec_lab))
+```
+The change here is difficult to perceive and that isn't very surprising since the original data showed little variance from the get go, meaning that little could be done to stabilize it. 
+
+```{r 3_1_usgdp}
+autoplot(usgdp)
+gdp_lab <- BoxCox.lambda(usgdp)
+autoplot(BoxCox(usgdp,gdp_lab))
+```
+The shift here is also slight, but it straightens the plot, accentuating shifts from the trend and highlighting that there doesn't seem to be any cyclical trends within in. 
+
+```{r 3_1_mcopper}
+autoplot(mcopper)
+copper_lab <- BoxCox.lambda(mcopper)
+autoplot(BoxCox(mcopper,gdp_lab))
+```
+With the $mcopper$ data the transformation stabilizes the variance somewhat, equalizing the magnitude of the peaks and troughs throughout the graph. It helps see that there does seem to be a somewhat cyclical trend in the data.
+
+```{r 3_1_enplanements}
+autoplot(enplanements)
+enplmnts_lab <- BoxCox.lambda(enplanements)
+autoplot(BoxCox(enplanements,enplmnts_lab))
+```
+
+The transformation here doesn't change the grap hall that much, since the trend is fairly obvious in the original, it simply somewhat standardizes the magnitudes of the waves we see, highlighting the seasonal nature of the data. 
+
+---
+
+**Exercise 3.2:** Why is a Box-Cox transformation unhelpful for the cangas data?
+
+```{r 3_2}
+autoplot(cangas)
+cangas_lab <- BoxCox.lambda(cangas)
+autoplot(BoxCox(cangas,cangas_lab))
+```
+The seasonal variation in the `cangas` data seems to increase in the late 70s, 80s and then decrease again in the 90s; this makes it difficult to stabilize the variance. As a result our transformation shows little difference from teh original plot and adds little value. 
+
+---
+
+**Exercise 3.3:** What Box-Cox transformation would you select for your retail data (from Exercise 3 in Section 2.10)?
+
+
+```{r 3_3}
+#Data available at https://github.com/mkollontai/DATA624
+retaildata <- readxl::read_excel("retail.xlsx", skip=1)
+myts <- ts(retaildata[,"A3349874C"],
+  frequency=12, start=c(1982,4))
+autoplot(myts)
+retail_lab <- BoxCox.lambda(myts)
+autoplot(BoxCox(myts,retail_lab))
+```
+
+A lambda transformation ($\lambda = `r retail_lab`$) neatly stabilizes the variance in teh data, highlighting the strongly seasonal trend within the retail data as well as the levelling off of the data towards the latter years. 
+
+---
+
+**Exercise 3.8:** For your retail time series (from Exercise 3 in Section 2.10):
+
+a. Split the data into two parts using
+
+```{r 3_8_a}
+myts.train <- window(myts, end=c(2010,12))
+myts.test <- window(myts, start=2011)
+```
+
+b. Check that your data have been split appropriately by producing the following plot.
+
+```{r 3_8_b}
+autoplot(myts) +
+  autolayer(myts.train, series="Training") +
+  autolayer(myts.test, series="Test")
+```
+
+c. Calculate forecasts using `snaive` applied to `myts.train`.
+
+```{r 3_8_c}
+fc <- snaive(myts.train)
+```
+
+d. Compare the accuracy of your forecasts against the actual values stored in `myts.test`.
+
+```{r 3_8_d}
+accuracy(fc,myts.test)
+```
+The mean error (ME) values are very different, with the training set showing 6 and the test set showing -31. In all honesty all of the accuracies calculated are highly off. This is potentially driven by the fact that there are a few sudden spikes in the data towards the end that are not present in earlier data, skewing any prediction made. 
+
+e. Check the residuals.
+
+```{r 3_8_e}
+checkresiduals(fc)
+```
+
+Do the residuals appear to be uncorrelated and normally distributed?
+
+The residuals appear to be fairly normally distributed around a value slightly higher than 0, though there does seem to be a few outliers on the far right, most likely a result of the same spikes mentioned in part `d` where we looked at the accuracies. 
+
+f. How sensitive are the accuracy measures to the training/test split?
+
+By splitting the training/test at a different location we can see how sensitive the accuracy measures are:
+
+```{r 3_8_f_1}
+myts.train <- window(myts, end=c(2005,12))
+myts.test <- window(myts, start=2006)
+fc <- snaive(myts.train)
+accuracy(fc,myts.test)
+```
+
+Shifting the split from 2011 to 2006 we see that our accuracy measures are now much closer, potentially due to the fact that the test set now encompasses more data to adjust for the effect of the extreme spikes in 2010/2011. We can see here how important it is to have an idea of what your data looks like before determining a split point for test/train (where possible). 
