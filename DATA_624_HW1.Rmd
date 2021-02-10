@@ -1,0 +1,219 @@
+---
+title: "DATA624 HW1"
+author: "M Kollontai"
+date: "2/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Exercise 2.1:** Use the help function to explore what the series `gold`, `woolyrnq` and `gas` represent.
+
+a. Use `autoplot()` to plot each of these in separate plots.
+
+```{r 2_1_a_1}
+library(fpp2)
+#help(gold)
+autoplot(gold) + 
+  ggtitle('Daily morning gold prices in US dollars. 1 January 1985 – 31 March 1989') +
+  xlab('Days after 1 Jan 1985') +
+  ylab('Price ($)') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+```{r 2_1_a_2}
+#help(woolyrnq)
+autoplot(woolyrnq) + 
+  ggtitle('Quarterly production of woollen yarn in Australia: tonnes. Mar 1965 – Sep 1994') +
+  xlab('Year') +
+  ylab('Production (tonne)') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r 2_1_a_3}
+#help(gas)
+autoplot(gas) + 
+  ggtitle('Australian monthly gas production: 1956–1995') +
+  xlab('Year') +
+  ylab('Gas Production') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+b. What is the frequency of each series?
+
+```{r 2_1_b_1}
+gold_freq <- frequency(gold)
+```
+
+The frequency of the `gold` timeseries is `r gold_freq`, so daily (1 per **day**).
+
+```{r 2_1_b_2}
+wool_freq <- frequency(woolyrnq)
+```
+
+The frequency of the `gold` timeseries is `r wool_freq`, so quarterly (4 per **year**).
+
+```{r 2_1_b_3}
+gas_freq <- frequency(gas)
+```
+
+The frequency of the `gold` timeseries is `r gas_freq`, so monthly (12 per **year**).
+
+c. Use `which.max()` to spot the outlier in the `gold` series. Which observation was it?
+
+```{r 2_1_c}
+gold_out <- which.max(gold)
+```
+
+The outlier in the `gold` series has a value of `r gold_out`
+
+---
+
+**Exercise 2.2:** Download the file tute1.csv from the book website, open it in Excel (or some other spreadsheet application), and review its contents. You should find four columns of information. Columns B through D each contain a quarterly series, labelled Sales, AdBudget and GDP. Sales contains the quarterly sales for a small company over the period 1981-2005. AdBudget is the advertising budget and GDP is the gross domestic product. All series have been adjusted for inflation.
+
+a. You can read the data into R with the following script:
+
+```{r 2_2_a}
+tute1 <- read.csv("https://raw.githubusercontent.com/mkollontai/DATA624/main/tute1.csv", header=TRUE)
+View(tute1)
+```
+
+b. Covert the data to time series
+
+```{r 2_2_b}
+mytimeseries <- ts(tute1[,-1], start=1981, frequency=4)
+```
+
+c. Construct time series plots of each of the three series
+
+```{r 2_2_c_1}
+autoplot(mytimeseries, facets=TRUE)
+```
+
+```{r 2_2_c_2}
+autoplot(mytimeseries)
+```
+
+Including `facets=TRUE` ensures that the lines are plotted separately as opposed to on one chart. 
+
+---
+
+**Exercise 2.3:** Download some monthly Australian retail data from the book website. These represent retail sales in various categories for different Australian states, and are stored in a MS-Excel file.
+
+a. You can read the data into R with the following script:
+
+```{r 2_3_a}
+retaildata <- readxl::read_excel("retail.xlsx", skip=1)
+```
+
+The second argument (skip=1) is required because the Excel sheet has two header rows.
+
+b. Select one of the time series as follows (but replace the column name with your own chosen column):
+
+We will select $A3349874C$:
+
+```{r 2_3_b}
+myts <- ts(retaildata[,"A3349874C"],
+  frequency=12, start=c(1982,4))
+```
+
+c. Explore your chosen retail time series using the following functions:
+
+`autoplot()`, `ggseasonplot()`, `ggsubseriesplot()`, `gglagplot()`, `ggAcf()`
+
+Can you spot any seasonality, cyclicity and trend? What do you learn about the series?
+
+```{r 2_3_c_1}
+autoplot(myts)
+ggseasonplot(myts)
+ggseasonplot(myts, polar = TRUE)
+ggsubseriesplot(myts)
+gglagplot(myts)
+ggAcf(myts)
+```
+
+From these 5 plots we can clearly see a seasonality trend within our timeseries - specifically with a peak in December (possibly tied to holiday shopping). After the peak in December there is consistently a drop through January and into February, with March sales picking up slightly after that. May to June also tends to show a drop in sales. 
+
+Overall we can see that the trend over the years has been a rise in overall sales year-over-year.There have been a few sharp drops not fitting with the general trends most likely associated with extreme events/circumstances of some sort (e.g. Jun-Jul 2000, Sep-Oct 2012).
+
+The lag plots all show positive correlations with plot 12 being particularly striking, highlighting the truly seasonal nature of the trends.
+
+---
+
+**Exercise 2.6:** Use the following graphics functions: `autoplot()`, `ggseasonplot()`, `ggsubseriesplot()`, `gglagplot()`, `ggAcf()` and explore features from the following time series: $hsales$, $usdeaths$, $bricksq$, $sunspotarea$, $gasoline$.
+
+* Can you spot any seasonality, cyclicity and trend?
+
+* What do you learn about the series?
+
+```{r 2_6_fxn}
+plots_t_ser <- function(ts, name){
+  print(autoplot(ts) + ggtitle(name) +
+    theme(plot.title = element_text(hjust = 0.5)))
+  
+  try(print(ggseasonplot(ts) + ggtitle(name) +
+    theme(plot.title = element_text(hjust = 0.5))))
+  
+  try(print(ggseasonplot(ts, polar = TRUE) + ggtitle(name) +
+    theme(plot.title = element_text(hjust = 0.5))))
+  
+  try(print(ggsubseriesplot(ts) + ggtitle(name) +
+    theme(plot.title = element_text(hjust = 0.5))))
+  
+  print(gglagplot(ts) + ggtitle(name) +
+    theme(plot.title = element_text(hjust = 0.5)))
+  
+  print(ggAcf(ts) + ggtitle(name) +
+    theme(plot.title = element_text(hjust = 0.5)))
+}
+```
+
+```{r 2_6_hsales}
+plots_t_ser(hsales, 'HSales')
+```
+
+Hsales, the monthly sales data of new one-family homes in the US since 1973, shows a trendof  peaking around April or March most years. The strongest lag indicators seem to be at 1 and 12, confirming the initial note of seasonality. The overall chart doesn't point to an overall trend, with the data fluctuating steadily since 1973 and ending close to where it began. It's interesting to note that the lag plots show negative coefficients for months 18-21 and low positives for 22-24. Perhaps this is indicative of a larger trend of fluctuating sales? Let's look at a wider lag plot to see:
+
+```{r 2_6_hsales_lag}
+ggAcf(hsales, lag = 240) +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+This larger picture seems to indicate that there may be 4/5 year cycles in the market of relative ups and downs.
+
+---
+
+```{r 2_6_usdeaths}
+plots_t_ser(usdeaths, 'USdeaths')
+```
+
+US deaths show a very strong seasonality, with deaths peaking in July and dipping in February every year from 1973 to 1978. The overall trend seems to be steady, though the peak in '73 was the highest within the data, the rest of the values do not seem to exhibit too strong an either positive or negative trend. 
+
+---
+
+```{r 2_6_bricksq}
+plots_t_ser(bricksq, 'bricksq')
+```
+
+The trend immediately obvious from our first plot is a strong growth in the volume of Brick Production within Australia from 1956 to around 1975, at which point it seems to have stagnated somewhat. The seasonal plot indicates that production in Q1 tends to be the lowest within a year; the polar version is especially good at highlighting the similar values for Q2, Q3 and Q4 in each year, with the bottom half being nearly perfect circles every year.The lag plots suggest a positive overall trend, though this is undoubtedly strongly influenced by the rapid initial growth If we were to look at the data post-1975 I suspect the trend wouldn't be nearly as positive, with the last couple of decades of data suggesting a stabilization of sorts. 
+
+---
+
+```{r 2_6_sunspotarea, error= FALSE}
+plots_t_ser(sunspotarea, 'sunspotarea')
+```
+
+The error messages from the "seasonal" plots immediately show us that the data is not seasonal - there is no surprise her as the data is recorded yearly, but is about the sun. One would not expect data about the sun's surface to be influenced by the location of the Earth (at least not perceptibly). There does, however, appear to be a cyclicity to the data, with the lag plot indicating that the period of this cycle is around 10 or 11 years, with the area of the spots peaking approximately every 10 years and dipping halfway between the peaks. A little research suggests that there is in fact evidence for a [Sunspot Cycle every 11 years!](https://scied.ucar.edu/sunspot-cycle). 
+
+The overall trend is hard to pinpoint with the data we have available - the magnitude of the peaks seems to increase from 1875 to 1957, after which the magnitudes seem to decrease. This may be part of a larger trend in terms of the magnitudes fo the sunspots, but we would need more data to confirm if this is cyclical or some sort of random increase caused by external factors. 
+
+```{r 2_6_gasoline, error= FALSE}
+plots_t_ser(gasoline, 'gasoline')
+```
+
+```{r 2_6_gasoline_lag}
+ggAcf(gasoline, lag = 52) +
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+The gasoline timeseries shows an increase from 1991 to 2005, with the data leveling off after that. There appears to be little seasonality to the data, though weeks 20-40 do tend to have higher units supplied. As with the Australian Brick data, there is a positive correlation evident throughout the lag graphs, but the latter data does not show as much of this as the earlier data, suggesting that while the overall trend may be positive, more recently this may be leveling off or falling into a cyclical pattern, the confirmation of which would require additional information would be required
