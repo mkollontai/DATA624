@@ -1,0 +1,165 @@
+---
+title: "DATA624 HW4"
+author: "M Kollontai"
+date: "2/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp2)
+library(mlbench)
+library(ggplot2)
+library(tidyr)
+library(reshape2)
+library(corrplot)
+library(caret)
+library(mice)
+```
+
+**Exercise 3.1:** The UC Irvine Machine Learning Repository6 contains a data set related to glass identification. The data consist of 214 glass samples labeled as one of seven class categories. There are nine predictors, including the refractive index and percentages of eight elements: Na, Mg, Al, Si, K, Ca, Ba, and Fe.
+
+```{r 3_1_prep}
+data(Glass)
+str(Glass)
+```
+
+(a) Using visualizations, explore the predictor variables to understand their
+distributions as well as the relationships between predictors.
+
+```{r 3_1 hist}
+ggplot(gather(Glass[,1:9]), aes(value)) + 
+  geom_histogram(bins = 9) +
+  facet_wrap(~key, scales = 'free_x')
+```
+
+```{r 3_1_box, error=FALSE}
+x <- melt(Glass[,c(2:9)])
+plt <- ggplot(data = x, aes(x = variable, y = value))
+plt + geom_boxplot() + theme_minimal() + labs(x = "Element", y = "Percent (%)")
+```
+
+```{r 3_1_box2}
+boxplot(Glass[,1], main = 'Boxplot of Refractive Index', ylab='Refrective Index (RI)')
+```
+
+```{r 3_1_corr}
+corr <- cor(Glass[,1:9])
+corrplot(corr, method = 'circle', order = 'AOE')
+```
+
+The Refractive Index and Calcium content seem to have an especially strong positive correlation. 
+
+---
+
+(b) Do there appear to be any outliers in the data? Are any predictors skewed?
+
+A look at the predictors shows us that some are more evenly distributed within the sample than others. 
+
+Aluminum (Al), Calcium (Ca), Sodium (Na), and Silicon (Si) seem to be fairly normally distributed within the 214 observations here, though Al, Ca, and Na show slight right-skewedness; the Refractive Index (RI) also follows a fairly normal distribution with a right tail.
+
+Barium (Ba), Iron (Fe), and Potassium (K) are strongly right-skewed, with a majority of the measurements falling on the low end of the presented values due to a large portion containing none of those elements. Since the percentage can't be below 0, the distribution bunches up there. 
+
+Finally, Magnesium (Mg) presents a fairly unique distribution where most of the readings fall on the right end of the spectrum, but there is a healthy amount at readings of zero (0), presenting a multimodal distribution with peaks at 0 and approximately 3.5.
+
+None of the predictors appear to have outliers, unless some of the zero values are due to a lack of data as opposed to actual lack of the element altogether. One way to test this is to create a column with the total percentages from these 8 elements and see if the zeroes in some columns correspond with numbers noticeably lower than 100% for the total:
+
+```{r}
+Glass['Total'] = Glass[2]+ Glass[3]+ Glass[4]+ Glass[5]+ Glass[6]+ Glass[7]+ Glass[8]+ Glass[9]
+boxplot(Glass[,11], main = 'Boxplot of Total Calculated Percentages', ylab='Percentage (%)')
+```
+
+It appears that the lowest total falls at around 99%, meaning 1% is unaccounted for in the 8 provided values. It is certainly possible that this is data missing from our 8 elements, though also likely that it is simply data accounted for by elements not listed in our table.
+
+---
+
+(c) Are there any relevant transformations of one or more predictors that
+might improve the classification model?
+
+We can take the logarithm of the skewed predictors like Ba, Fe, and K. This could improve the accuracy of our classification model. 
+
+**Exercise 3.2:** The soybean data can also be found at the UC Irvine Machine Learning Repository. Data were collected to predict disease in 683 soybeans. The 35 predictors are mostly categorical and include information on the environmental conditions (e.g., temperature, precipitation) and plant conditions (e.g., left spots, mold growth). The outcome labels consist of 19 distinct classes.
+
+```{r 3_2_prep}
+data(Soybean)
+```
+
+a. Investigate the frequency distributions for the categorical predictors. Are any of the distributions degenerate in the ways discussed earlier in this chapter?
+
+```{r, error = FALSE}
+ggplot(gather(Soybean[,2:36], na.rm = TRUE), aes(value)) + 
+  geom_histogram(stat='count') +
+  facet_wrap(~key, scales = 'free_x')
+```
+
+In order to determine potential degenerate distributions, we can use the `nearZeroVar` function from the `caret` package. It provides an evaluation of whether the variance of a predictor is near zero, suggesting that it may be degenerate. 
+
+```{r}
+nearZeroVar(Soybean[,2:36], names = TRUE)
+```
+
+We can see from thsi function that the three variables $leaf.mild$, $mycelium$, and $sclerotia$ may be degenerate distributions. 
+
+---
+
+b.  Roughly 18 % of the data are missing. Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?
+
+```{r}
+sapply(Soybean, function(x) sum(is.na(x)))
+```
+
+From the table above we can actually see that there is missing data in every column except for `Class` and `leaves`, with `date`, and `area.dam` having 1 missing datapoint. We can see that the highest number of missing data is from `hail`, `sever`, `lodging`, and `seed.tmt` each of which is missing 121 datapoints in 683 observations, or 17.7%. 
+
+```{r}
+library(dplyr)
+missing <- Soybean %>%
+  select(everything()) %>%  
+  group_by(Class) %>%
+  summarise_all(funs(sum(is.na(.)))) %>%
+  mutate(Total = select(.,date:roots) %>% rowSums())
+missing[,c('Class','Total')] %>% arrange(-Total)
+```
+
+From the table above we can see that the $phytophthora-rot$ class has far an away the most missing data (though obviously multiple missing fields for the same observation exacerbates these numbers), followed by $2-d-4-injury$ and $cyst-nematode$. $diaporthe-pod-&-stem-blight$ and $herbicide-injury$ round out the list of classes with missing data, meaning that 14 of the classes don't have any missing data. 
+
+---
+
+c. Develop a strategy for handling missing data, either by eliminating
+predictors or imputation.
+
+One option to deal with missing data is to remove all observations with any missing data:
+
+```{r}
+Soybean_clean <- Soybean[complete.cases(Soybean), ]
+dim(Soybean_clean)
+```
+
+This is a simple and quick solution, but it removes 18% of our observations, meaning any predictive model we develop will have nearly a fifth less data to work with. Let's look at a more complicated (but les destructive) method of dealing with missing data: imputation. 
+
+A very popular package to deal with missing data imputation is `Mice`:
+
+```{r}
+md.pattern(Soybean, rotate.names = TRUE)
+```
+
+We will impute using the Predictive Mean Matching (pmm) method, which picks a value from similar observations to assign to the missing datapoint. 
+
+```{r}
+imputed_Soy <- mice(Soybean, method = 'pmm', seed = 44, printFlag = FALSE)
+summary(imputed_Soy)
+```
+
+```{r}
+final_soy <- complete(imputed_Soy,4)
+```
+
+Now that we have imputed the data let's confirm nothing is missing:
+
+```{r}
+missing2 <- final_soy %>%
+  select(everything()) %>%  # replace to your needs
+  group_by(Class) %>%
+  summarise_all(funs(sum(is.na(.)))) %>%
+  mutate(Total = select(.,date:roots) %>% rowSums())
+missing2[,c('Class','Total')] %>% arrange(-Total)
+```
