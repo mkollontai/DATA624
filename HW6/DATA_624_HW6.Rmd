@@ -1,0 +1,439 @@
+---
+title: "DATA624 HW6"
+author: "M Kollontai"
+date: "3/18/2021"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp2)
+library(mlbench)
+library(ggplot2)
+library(tidyr)
+library(reshape2)
+library(corrplot)
+library(caret)
+library(mice)
+```
+
+## **Exercise  8.1:** 
+
+Figure 8.31 shows the ACFs for 36 random numbers, 360 random numbers and 1,000 random numbers.
+
+a. Explain the differences among these figures. Do they all indicate that the data are white noise?
+
+All three of these images suggest that the data are white noise - there doesn't appear to be a pattern in any of the ACF plots. The plots are different due to the difference in the sample size - a higher sample size for random data will show lower correlation due to more datapoints being accounted for in each calculation. 
+
+b. Why are the critical values at different distances from the mean of zero? Why are the autocorrelations different in each figure when they each refer to white noise?
+
+The critical values of an ACF are calculated using the sample size (N) and are proportional to $\frac{1}{\sqrt{N}}$, therefore the plots for the data with a higher sample size have much narrower critical values. 
+
+---
+
+## **Exercise 8.2:**
+
+A classic example of a non-stationary series is the daily closing IBM stock price series (data set `ibmclose`). Use R to plot the daily closing prices for IBM stock and the ACF and PACF. Explain how each plot shows that the series is non-stationary and should be differenced.
+
+
+
+```{r}
+autoplot(ibmclose) +
+  ggtitle('IBM closing price')
+ggAcf(ibmclose)
+ggPacf(ibmclose)
+```
+
+The slowly decreasing values in the ACF indicate that this is a non-stationary series, while the PACF shows no significant correlation beyond Lag 1 (which is equal to the first lag in the ACF and always equal to 1), indicating that a standard differencing that shows the change in price daily may be sufficient. 
+
+---
+
+## **Exercise 8.3:** 
+
+For the following series, find an appropriate Box-Cox transformation and order of differencing in order to obtain stationary data.
+
+a. `usnetelec`
+
+```{r}
+autoplot(usnetelec)
+```
+
+This data is yearly, so it shows no seasonality. In this case a box-cox transformation would provide little value before simply differentiating the data to see year-over-year change in the net electricity production. We see that there is a fairly strong upward trend in the data, so we would expect most of the differentiated values to be positive and not centered around 0.
+
+```{r}
+library(urca)
+autoplot(diff(usnetelec))
+usnetelec %>% diff() %>% ur.kpss() %>% summary()
+```
+
+One level of differencing seems to still suggest a trend within the data, so let's differentiate again to view the 'acceleration; of change year-over-year within the data:
+
+```{r}
+autoplot(diff(diff(usnetelec)))
+usnetelec %>% diff() %>% diff() %>% ur.kpss() %>% summary()
+```
+
+Two levels of differencing yields a somewhat stationary dataset, suggesting that the acceleration of the change in annual US net electricity generation is randomly distributed. 
+
+b. `usgdp`
+
+```{r}
+autoplot(usgdp)
+usgdp %>% ur.kpss() %>% summary()
+```
+
+As in the example above, the high test-statistic suggests the data needs differentiating. It contains a clear upward trend and little or no seasonality, so box-cox isn't necessary before differentiating. The test statistic value is fairly high (4.66).
+
+```{r}
+ndiffs(usgdp)
+autoplot(diff(usgdp))
+usgdp %>% diff() %>% ur.kpss() %>% summary()
+```
+
+The usgdp data differenced once (yearly change in gdp) still appears to suggest an upward trend (coinciding with the strong overall upward trend in the original data). The `ndiffs` function does suggest differentiating again in order to view how much the change year-over-year changes:
+
+```{r}
+autoplot(diff(diff(usgdp)))
+usgdp %>% diff() %>% diff() %>% ur.kpss() %>% summary()
+```
+
+Now we see a stationary dataset - looks completely random and distributed around 0.
+
+c. `mcopper`
+
+```{r}
+autoplot(mcopper)
+mcopper_lab <- BoxCox.lambda(mcopper)
+box_mcopper <- BoxCox(mcopper,mcopper_lab)
+autoplot(box_mcopper)
+box_mcopper %>% ur.kpss() %>% summary()
+ndiffs(box_mcopper)
+```
+
+Here we fnially see a degree of seasonality that can be standardized somewhat by a box-cox transformation, which also reduces the degree to which the spike at the end seems extreme. The `ndiffs` function suggests one level of differencing on top of the box-cox should standardize our data:
+
+```{r}
+box_mcopper %>% diff() %>% autoplot()
+
+```
+
+d. `enplanements`
+
+```{r}
+autoplot(enplanements)
+enplanements_lab <- BoxCox.lambda(enplanements)
+box_enplanements <- BoxCox(enplanements,enplanements_lab)
+autoplot(box_enplanements)
+box_enplanements %>% ur.kpss() %>% summary()
+ndiffs(box_enplanements)
+```
+
+Again, we see here that a box-cox transformation standardizes the seasonality present in the data. The `ndiffs` function suggests differentiating the data once in order to standardize it:
+
+```{r}
+box_enplanements %>% diff() %>% autoplot()
+box_enplanements %>% diff() %>% ur.kpss() %>% summary()
+```
+
+Despite the remaining spike towards the end of the data, and our low test statistic, there appears to still be a seasonal component to the data - applying an additional differentiation may remedy this:
+
+```{r}
+box_enplanements %>% diff() %>% diff() %>% autoplot()
+box_enplanements %>% diff() %>% diff() %>% ur.kpss() %>% summary()
+```
+
+Finally, after a box-cox transformation and 2 levels of differentiating, we see something that resembles white noise - a stationary dataset. 
+
+e. `visitors`
+
+```{r}
+autoplot(visitors)
+visitors_lab <- BoxCox.lambda(visitors)
+box_visitors <- BoxCox(visitors,visitors_lab)
+autoplot(box_visitors)
+ndiffs(box_visitors)
+```
+
+Again, here we use the box-cox to normalize the seasonal component found within our data. The original graph clearly shows that the seasonality increases as the trend goes up. One level of differencing produces a dataset that still appears to contain seasonality. 
+
+```{r}
+ndiffs(box_visitors)
+box_visitors %>% diff() %>% autoplot()
+box_visitors %>% diff() %>% ur.kpss() %>% summary()
+```
+
+Applying one more level of differencing may help with removing the seasonal aspect of the data:
+
+```{r}
+diff2_box_vis <- box_visitors %>% diff() %>% diff()
+autoplot(diff2_box_vis)
+ggAcf(diff2_box_vis,lag = 20)
+```
+
+While the magnitudes of the spikes do appear more standardized, there still appears to be a degree of seasonality within the dataset (confirmed by the result of the `ggAcf` function). One more level of differencing perhaps?
+
+```{r}
+diff3_box_vis <- diff2_box_vis %>% diff() %>% diff()
+autoplot(diff3_box_vis)
+ggAcf(diff3_box_vis,lag = 20)
+```
+Three levels of differencing on top of a box-cox appears to be the level required to make the data stationary. 
+
+---
+
+## **Exercise 8.5:** 
+
+For your retail data (from Exercise 3 in Section 2.10), find the appropriate order of differencing (after transformation if necessary) to obtain stationary data.
+
+```{r 8_5}
+#Data available at https://github.com/mkollontai/DATA624
+retaildata <- readxl::read_excel("retail.xlsx", skip=1)
+myts <- ts(retaildata[,"A3349874C"],
+  frequency=12, start=c(1982,4))
+autoplot(myts)
+retail_lab <- BoxCox.lambda(myts)
+autoplot(BoxCox(myts,retail_lab))
+```
+
+A box-cox transformation standardizes the seasonal component present within the retail data (though some of the magnitudes towards the end of the timeseries remain somewhat higher). Let's take a look at what one level of differencing does to the dataset:
+
+```{r}
+diff_box_ret <- BoxCox(myts,retail_lab) %>% diff()
+autoplot(diff_box_ret)
+ggAcf(diff_box_ret,lag = 20)
+```
+
+The first differencing of the data yields a dataset that still contains a strong seasonal component - the strong lag at 12 confirms it. Additional differencing at lag 12:
+
+```{r}
+diff2_box_ret <- diff_box_ret %>% diff(12) 
+autoplot(diff2_box_ret)
+ggAcf(diff2_box_ret,lag = 20)
+```
+
+Accounting for the 12 month seasonality with a final differentiation appears to have successfully made this a stationary dataset.
+
+---
+
+## **Exercise 8.6:** 
+
+Use R to simulate and plot some data from simple ARIMA models.
+
+a. Use the following R code to generate data from an AR(1) model with $\phi_{1}=0.6$ and $\sigma^{2} = 1$. The process starts with  $y_{1}=0$.
+
+
+
+```{r}
+AR_1_phi <- function(phi_1){
+  y <- ts(numeric(100))
+  e <- rnorm(100)
+  for(i in 2:100)
+    y[i] <- phi_1*y[i-1] + e[i]
+  return (y)
+}
+
+```
+
+b. Produce a time plot for the series. How does the plot change as you change $\phi_{1}$?
+
+```{r}
+phis <- seq(0,0.9,0.3)
+x <- autoplot(AR_1_phi(0.6))
+for (phi in phis){
+  y = AR_1_phi(phi)
+  x <- x + autolayer(y, series = paste(phi))
+}
+x
+```
+
+We can see that changing the $\phi_{1}$ value affects the degree to which the model looks like noise. Lower $\phi_{1}$ values tell the model to place less weight on previous readings of the model and more on noise, so these look more and more like random data. Increasing $\phi_{1}$ results in a more defined pattern in the data, with spikes accentuated more by higher values of $\phi_{1}$. 
+
+c. Write your own code to generate data from an MA(1) model with  $\theta_{1}=0.6$ and $\sigma^{2} =1$.
+
+```{r}
+MA_1_theta <- function(theta_1){
+  y <- ts(numeric(100))
+  e <- rnorm(100)
+  for(i in 2:100)
+    y[i] <- e[i] + theta_1*e[i-1]
+  return (y)
+}
+```
+
+d. Produce a time plot for the series. How does the plot change as you change  $\theta_{1}$?
+
+```{r}
+
+thetas <- seq(0,0.9,0.3)
+x <- autoplot(MA_1_theta(0.6))
+for (theta in thetas){
+  y = MA_1_theta(theta)
+  x <- x + autolayer(y, series = paste(theta))
+}
+x
+```
+
+We can see from the graph above that higher theta values yield more extreme prediction values of the model, with $\theta_{1} = 0.9$ yielding the most extreme spikes. A value of 0 for $\theta_{1}$ understandably produces the narrowest band since it only uses $e_{t}$ for its data without adding a portion of the previous error. 
+
+e. Generate data from an ARMA(1,1) model with  $\phi_{1} =0.6, \theta_{1}=0.6$ and $\sigma^{2}=1$.
+
+To generate the ARIMA(1,1) model we will use parts of the AR and MA models and combine them. The function below takes a $\phi_{1}$ and a $\theta_{1}$ as input and generates a timeseries.
+
+```{r}
+ARMA_1_1 <- function(phi_1,theta_1){
+  y <- ts(numeric(100))
+  e <- rnorm(100)
+  for(i in 2:100)
+    y[i] <- e[i] + theta_1*e[i-1] + phi_1*y[i-1]
+  return (y)
+}
+ARMA11 <- ARMA_1_1(0.6,0.6)
+```
+
+f. Generate data from an AR(2) model with  $\phi_{1}=-0.8, \phi_{2}=0.3$ and $\sigma^{2}=1$. (Note that these parameters will give a non-stationary series.)
+
+The AR(2) function below needs to start at 1 point later than the AR(1) as it requires data for 2 previous points, but otherwise follows the same pattern. 
+
+```{r}
+AR_2 <- function(phi_1, phi_2){
+  y <- ts(numeric(100))
+  e <- rnorm(100)
+  for(i in 3:100)
+    y[i] <- phi_1*y[i-1] + phi_2*y[i-2] + e[i]
+  return (y)
+}
+AR2 <- AR_2(-0.8,0.3)
+```
+
+g. Graph the latter two series and compare them.
+
+```{r}
+autoplot(ARMA11) +
+  autolayer(AR2)
+```
+
+```{r}
+autoplot(ARMA11) +
+  autolayer(AR2) +
+  ylim(-50,50)
+```
+
+The first thing that jumps out from looking at the two processes viewed alongside one another is the magnitude of the AR(2) process - it is a non-stationary process that oscillates and increases in magnitude as time goes on. By zooming into the -50 to 50 range, we can see that the ARMA(1,1) process is close to stationary in that there doesn't seem to be a consistent oscillation, though we couldn't classify it as white noise. The magnitude of the ARMA(1,1) data never exceeds 10, whereas the AR(2) process exceeds that value by the 20th time entry. The very consistent oscillation within the AR(2) graph is driven by the opposite signs of the two $\phi$ coefficients - forcing a shift in direction and increase of magnitude (due to the strongly different values of the two).
+
+Just as a comparison, here is the same ARMA(1,1) model plotted alongside an AR(2) with $\phi_{1} = -0.3$ and $\phi_{2}=0.4$, where we see the magnitude of the AR(2) model remain within the bounds of the ARMA(1,1), but still show a more consistent oscillatory pattern.
+
+```{r}
+AR2_2 <- AR_2(-0.3,0.4)
+autoplot(ARMA11) +
+  autolayer(AR2_2)
+```
+
+---
+
+## **Exercise 8.7:**
+
+Consider `wmurders`, the number of women murdered each year (per 100,000 standard population) in the United States.
+
+a. By studying appropriate graphs of the series in R, find an appropriate $ARIMA(p,d,q)$ model for these data.
+
+```{r}
+ggtsdisplay(wmurders)
+
+```
+
+Based on the analysis of the timeseries above, there doesn't seem to be a seasonal component within the data, though a trend is obvious. The `ndiffs` function suggests differencing twice.
+
+```{r}
+ndiffs(wmurders)
+wmurders %>% diff() %>% diff() %>% ggtsdisplay()
+```
+
+Based on the ACF suggests adding an MA term to the model - let's view the effect of adding 1, 2 or 3 MAs.
+
+```{r}
+for (i in c(1,2,3)){
+  cat("\nAnalysis assuming ",i,"MAs\n")
+  print(Arima(wmurders, order=c(0,2,i)))
+}
+```
+
+The lowest AIC, AICc and BIC values associated with 2 MAs suggests using an ARIMA(0,2,2) model. 
+
+b. Should you include a constant in the model? Explain.
+
+"A constant is included unless $d=2$". In our case, d is indeed equal to 2 to I would not include a constant in the model. 
+
+c. Write this model in terms of the backshift operator.
+
+$${(1-B)}^{2}y_{t}=(1+\phi_{1}B)(1+\phi_{2}B)e_{t}$$
+
+d. Fit the model using R and examine the residuals. Is the model satisfactory?
+
+```{r}
+(fit <- Arima(wmurders, order = c(0,2,2)))
+checkresiduals(fit)
+```
+
+All autocorrelations appear within threshold limits and the residuals are fairly normally distributed around 0, suggesting that our residuals resemble white noise. The p-value is fairly high at 0.16. The model can tentatively be labeled satisfactory. 
+
+e. Forecast three times ahead. Check your forecasts by hand to make sure that you know how they have been calculated.
+
+```{r}
+forecast(fit, h=3)
+```
+
+${(1-B)}^{2}y_{t}=(1+\phi_{1}B)(1+\phi_{2}B)e_{t}$
+
+$(1-2B+{B}^{2})y_{t}=(1+\phi_{1}B+\phi_{2}B+\phi_{1}\phi_{2}{B}^{2})e_{t}$
+
+$y_{t}-2y_{t-1}+y_{t-2}=e_{t}+\phi_{1}e_{t-1}+\phi_{2}e_{t-1}+\phi_{1}\phi_{2}e_{t-2}$
+
+$y_{t}=2y_{t-1}-y_{t-2}+e_{t}+(\phi_{1}+\phi_{2})e_{t-1}+\phi_{1}\phi_{2}e_{t-2}$
+
+Plugging in our $\phi$ values from above and assuming $e_{t}=0$:
+
+$y_{t}=2y_{t-1}-y_{t-2}+(-1.0181+0.1470)e_{t-1}+ (-1.0181)*(0.1470)e_{t-2}$
+
+$y_{t}=2y_{t-1}-y_{t-2}-0.8711e_{t-1}-0.14966e_{t-2}$
+
+We need the last 2 datapoints and the last 2 residuals:
+
+```{r}
+tail(wmurders,2)
+```
+
+```{r}
+tail(residuals(fit),2)
+```
+
+${y}_{2005} = 2*2.589383-2.662227-(0.8711)*(0.02193315)-(0.14966)*(-0.09310062)$
+
+${y}_{2005} = 2.511366$
+
+${y}_{2006} = 2*2.511366-2.589383-0.2777*0.02193315$
+
+${y}_{2006} = 2.427258$
+
+${y}_{2007} = 2*2.427258-2.523287$
+
+${y}_{2007} = 2.331229$
+
+f. Create a plot of the series with forecasts and prediction intervals for the next three periods shown.
+
+```{r}
+autoplot(forecast(fit, h=3))
+```
+
+g. Does `auto.arima()` give the same model you have chosen? If not, which model do you think is better?
+
+```{r}
+(auto_fit <- auto.arima(wmurders,seasonal=F, stepwise=F, approximation = F))
+```
+```{r}
+autoplot(forecast(auto_fit, h=3))
+```
+
+The `auto.arima` function suggests using an ARIMA(0,2,3) model, one additional moving average above what we used. The graph shows a slight intial flattening of the prediction between teh first 2 points, though there is a sharper downturn at the last point. The prediction of the ARIMA(0,2,2) model seems far too steep and trends towards a complete lack of murders somewhere in the 2010s. Based on this I would probably go with the ARIMA(0,2,3) model, since it appears to be more realistic as to the rate at which the murders would decrease. 
