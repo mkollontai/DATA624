@@ -1,0 +1,144 @@
+---
+title: "DATA624 HW6"
+author: "M Kollontai"
+date: "3/18/2021"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp2)
+library(mlbench)
+library(ggplot2)
+library(tidyr)
+#library(reshape2)
+#library(corrplot)
+#library(caret)
+library(openxlsx)
+library(readxl)
+library(dplyr)
+```
+
+# **Part A - ATM Forecast** 
+
+In part A, I want you to forecast how much cash is taken out of 4 different ATM machines for May 2010.  The data is given in a single file.  The variable ‘Cash’ is provided in hundreds of dollars, other than that it is straight forward.   I am being somewhat ambiguous on purpose to make this have a little more business feeling.  Explain and demonstrate your process, techniques used and not used, and your actual forecast.  I am giving you data via an excel file, please provide your written report on your findings, visuals, discussion and your R code via an RPubs link along with the actual.rmd file  Also please submit the forecast which you will put in an Excel readable file.
+
+## Data Exploration
+
+```{r}
+ATMs <- read_excel("ATM624Data.xlsx" ) %>%
+  mutate(DATE = as.Date(DATE, origin = "1899-12-30"))
+summary(ATMs)
+```
+
+We can see that there are 19 entries with missing data in the `Cash` column. Let's view these entries and see what needs to be done with them:
+
+```{r}
+ATMs[is.na(ATMs$Cash),]
+```
+
+As we can see, 14 of the 19 entries with missing are actually placeholders for the May 2010 data we are meant to predict - these can be removed in order to simplify analysis of the dataset. The other 5 entries with NA's all occurred in June of 2019 and pertain to ATM1 or ATM2. These will need to be imputed before any prediction can be made. 
+
+```{r}
+date_end <- "2010-05-01"
+ATMs <- ATMs[ATMs$DATE < date_end,]
+ATMs$Day <- weekdays(ATMs$DATE)
+ATMs[is.na(ATMs$Cash),]
+```
+
+In order to determine the best path of imputation, let's split up the single dataset into separate dataframes - one for each ATM.
+
+```{r}
+ATM_1 <- ATMs[ATMs$ATM == 'ATM1',c('DATE','Cash','Day')]
+ATM_2 <- ATMs[ATMs$ATM == 'ATM2',c('DATE','Cash','Day')]
+ATM_3 <- ATMs[ATMs$ATM == 'ATM3',c('DATE','Cash','Day')]
+ATM_4 <- ATMs[ATMs$ATM == 'ATM4',c('DATE','Cash','Day')]
+```
+
+## Predictions {.tabset .tabset-pills}
+
+### ATM1 
+
+```{r}
+ggplot(ATM_1,aes(x=DATE, y =Cash)) + geom_point()
+```
+
+Looking over a scatter plot of the existing data from ATM1, we can see that the data appears to fall into two groups - one centered around 90 and the other around 15. Let's take a look and see if the lower numbers are tied to a particular day of the week.
+
+```{r}
+ATM_1_noNA <- ATM_1[!is.na(ATM_1$Cash),]
+ATM_1_byDay <- aggregate(ATM_1_noNA[,2],list(ATM_1_noNA$Day),mean)
+ggplot(ATM_1_byDay, aes(x=Group.1, y = Cash)) +
+  geom_bar(stat='identity') +
+  ggtitle('Average withdrawal from ATM1 by Day of Week') +
+  xlab('Day of Week') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+ggplot(ATM_1, aes(x=DATE, y = Cash)) +
+  geom_point() +
+  facet_wrap(~Day) +
+  xlab('') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+For some reason we see that Thursday shows much fewer withdrawals at this particular ATM until about February 2010, whereas Tuesday exhibits a somewhat opposite trend. One possibility is that the operating hours of the ATM were much lower on Thursdays until a particular date, and this reduction of hours was changed to Tuesdays on that date. Wednesday appears to be the only other day of the week that shows a change in the trend on that day, with a spike in the data on the day followed by slightly higher data afterwards, though not nearly as dramatic a change as we see for the other 2 days. Other interesting datapoints include some extremely low datapoints on 3 Fridays, 1 Monday, 1 Sunday and 1 Wednesday. 
+
+As we saw above, all of the missing datapoints for ATM1 were from June 2009 - a Saturday, a Monday and a Tuesday. Let's impute the missing datapoints with the averages of the day of week for Saturday and Monday - as they seem to exhibit a fairly flat trend, and with the average of the first cluster of data (before the shift to lower withdrawals) for the Tuesday datapoint.
+
+```{r}
+ATM_1_Sat <- ATM_1_byDay[ATM_1_byDay$Group.1 == "Saturday",'Cash']
+ATM_1_Mon <- ATM_1_byDay[ATM_1_byDay$Group.1 == "Monday",'Cash']
+first_tue_ATM1 <- ATM_1[(ATM_1$Day=='Tuesday' & ATM_1$DATE < "2010-03-01" ),]
+ATM_1_Tue <- mean(first_tue_ATM1$Cash, na.rm = TRUE)
+
+ATM_1[ATM_1$DATE == '2009-06-13','Cash'] <- ATM_1_Sat
+ATM_1[ATM_1$DATE == '2009-06-22','Cash'] <- ATM_1_Mon
+ATM_1[ATM_1$DATE == '2009-06-16','Cash'] <- ATM_1_Tue
+ggplot(ATM_1,aes(x=DATE, y =Cash)) + geom_point()
+```
+
+Due to the dramatic shift in some of the trends, let's identify when the shift in trend occurred by plotting the Tuesday and Thursday data:
+
+```{r}
+library(scales)
+ggplot(ATM_1,aes(x=DATE, y =Cash, color = Day)) + 
+  geom_point() +
+  scale_x_date(labels = date_format("%m/%d"), 
+               date_breaks = '2 days', 
+               limits = as.Date(c('2010-02-01','2010-03-01')))
+```
+
+Based on the graph above we can see that 2/17 is the date where the Wednesday spike happened and the shift in Tuesday and Thursday trends occurred. The data before this data doesn't appear to have much impact on the trend after it, so we can simply use the data from after 2/17 as the baseline for our prediction:
+
+```{r}
+ATM_1_sub <- ATM_1[ATM_1$DATE > "2010-02-17",]
+ggplot(ATM_1_sub,aes(x=DATE, y =Cash)) + 
+  geom_point(aes(color = Day)) +
+  geom_line() +
+  scale_x_date(labels = date_format("%m/%d"), 
+               date_breaks = '7 days')
+```
+We will forecast 31 days into the future to predict data for May 2010:
+
+```{r}
+ATM_1_ts <- ATM_1_sub$Cash %>%
+  ts(start = 1, frequency = 7) 
+ATM_1_fit <- ATM_1_ts %>% auto.arima(lambda = 0)
+ATM_1_fore <- forecast(ATM_1_fit, h =31)
+autoplot(ATM_1_fore)
+```
+
+```{r}
+DATE <- seq(as.Date("2010-05-01"), as.Date("2010-05-31"), by="days")
+Cash <- ATM_1_fore$mean
+ATM_1_May2010 <- data.frame(DATE, Cash)
+ATM_1_May2010$Day <- weekdays(ATM_1_May2010$DATE)
+ATM_1_pred <- rbind(ATM_1,ATM_1_May2010)
+write.xlsx(ATM_1_pred, 'ATM1_prediction.xlsx')
+```
