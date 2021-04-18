@@ -1,0 +1,225 @@
+---
+title: "DATA624 HW7"
+author: "M Kollontai"
+date: "3/28/2021"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp2)
+library(mlbench)
+library(ggplot2)
+library(tidyr)
+#library(reshape2)
+#library(corrplot)
+#library(caret)
+library(openxlsx)
+library(readxl)
+library(dplyr)
+```
+
+# Questions {.tabset .tabset-pills}
+
+## **6.2: ** 
+
+Developing a model to predict permeability (see Sect. 1.4) could save significant resources for a pharmaceutical company, while at the same time more rapidly identifying molecules that have a sufficient permeability to become a drug:
+
+### (a) 
+
+Start R and use these commands to load the data:
+
+```{r}
+library(AppliedPredictiveModeling)
+library(caret)
+library(elasticnet)
+data(permeability)
+```
+
+The matrix `fingerprints` contains the 1,107 binary molecular predictors for the 165 compounds, while permeability contains permeability response.
+
+### (b) 
+
+The fingerprint predictors indicate the presence or absence of substructures of a molecule and are often sparse meaning that relatively few of the molecules contain each substructure. Filter out the predictors that have low frequencies using the `nearZeroVar` function from the caret package.
+
+```{r}
+No_low_prints <- fingerprints[,-nearZeroVar(fingerprints)]
+```
+
+How many predictors are left for modeling?
+
+We can see that **388** predictors of the original 1107 remain. 
+
+### (c) 
+
+Split the data into a training and a test set, pre-process the data, and tune a PLS model. How many latent variables are optimal and what is the corresponding resampled estimate of R2?
+
+```{r}
+set.seed(4)
+pre_proc_opt <- c( "scale","nzv",  "corr", "medianImpute")
+train_row <- sort(sample(nrow(No_low_prints), nrow(No_low_prints)*.7))
+train_x_set <- No_low_prints[train_row,]
+test_x_set <- No_low_prints[-train_row,]
+train_y_set <- permeability[train_row,]
+test_y_set <- permeability[-train_row,]
+
+#figure out what this does
+perm_model <- train(train_x_set, train_y_set, method = 'pls', tuneLength = 20, preProcess = pre_proc_opt)
+perm_model
+```
+
+The optimal number of components selected is **8** and the corresponding $R^{2}$ is **0.5203064**.
+
+### (d) 
+
+Predict the response for the test set. What is the test set estimate of R2?
+
+```{r}
+perm_pred <- predict(perm_model, test_x_set)
+postResample(perm_pred, test_y_set)
+```
+
+The $R^{2}$ for the test set is a less impressive **0.34025**.
+
+### (e) 
+
+Try building other models discussed in this chapter. Do any have better
+predictive performance?
+
+```{r}
+ridge_lambdas <- seq(0.1,1,by=0.1)
+perm_ridge_model <- train(train_x_set,
+                          train_y_set,
+                          method='ridge',
+                          metric='Rsquared',
+                          tuneGrid=data.frame(.lambda = ridge_lambdas),
+                          trControl=trainControl(method='cv'),
+                          preProcess=pre_proc_opt
+                  )
+perm_ridge_model
+```
+
+The Ridge model selects for a $\lambda = 1$ results in an $R^{2}$ of **0.61544**.
+
+```{r}
+plot(perm_ridge_model)
+perm_ridge_pred <- predict(perm_ridge_model, test_x_set)
+postResample(perm_ridge_pred, test_y_set)
+```
+
+```{r}
+perm_lasso_model <- train(train_x_set,
+                          train_y_set,
+                          method='lasso',
+                          metric='Rsquared',
+                          tuneGrid = data.frame(.fraction = seq(0,0.9,by=0.1)),
+                          trControl=trainControl(method='cv'),
+                          preProcess=pre_proc_opt
+                  )
+perm_lasso_model
+```
+
+With a selected fraction of 0.1, the $R^{2}=0.6944$ for the lasso model. 
+
+```{r}
+plot(perm_lasso_model)
+perm_lasso_pred <- predict(perm_lasso_model, test_x_set)
+postResample(perm_lasso_pred, test_y_set)
+```
+
+### (f) 
+
+Would you recommend any of your models to replace the permeability
+laboratory experiment?
+
+Personally, I wouldn't replace a lab experiment with any of these models, but I'm not very good at modeling yet. There is certainly promise here and additional info, a larger training set and further refining of models could move us in the direction of phasing out the lab experiments. Keeping both going at first to cross-reference and further train models would provide a lot of benefit. 
+
+## **6.3: ** 
+
+A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors),6.5 Computing 139 measurements of the manufacturing process (predictors), and the response of product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1 % will boost revenue by approximately one hundred thousand dollars per batch:
+
+### (a) 
+
+Start R and use these commands to load the data:
+
+```{r}
+library(AppliedPredictiveModeling)
+data(ChemicalManufacturingProcess)
+```
+
+The matrix `processPredictors` contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.
+
+### (b) 
+
+A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in these missing values (e.g., see Sect. 3.8).
+
+```{r}
+(Chem_Imp <- preProcess(ChemicalManufacturingProcess[,-c(1)], method=c('knnImpute')))
+```
+
+### (c) 
+
+Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?
+
+```{r}
+library(RANN)
+chem_mod <- predict(Chem_Imp, ChemicalManufacturingProcess[,-c(1)])
+train_row <- sort(sample(nrow(chem_mod), nrow(chem_mod)*.7))
+train_x_set <- chem_mod[train_row,]
+test_x_set <- chem_mod[-train_row,]
+train_y_set <- ChemicalManufacturingProcess[train_row,1]
+test_y_set <- ChemicalManufacturingProcess[-train_row,1]
+```
+
+
+```{r}
+ridge_lambdas <- seq(0.5,2,by=0.25)
+pre_proc_opt <- c( "scale","nzv",  "corr", "knnImpute")
+chem_ridge_model <- train(train_x_set,
+                          train_y_set,
+                          method='ridge',
+                          metric='Rsquared',
+                          tuneGrid=data.frame(.lambda = ridge_lambdas),
+                          trControl=trainControl(method='cv'),
+                          preProcess=pre_proc_opt
+                  )
+chem_ridge_model
+```
+
+The Ridge model selects for a $\lambda = 1.5$ results in an $R^{2}$ of **0.6086476**.
+
+```{r}
+plot(chem_ridge_model)
+
+```
+
+(d) Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?
+
+```{r}
+chem_ridge_pred <- predict(chem_ridge_model, test_x_set)
+postResample(chem_ridge_pred, test_y_set)
+```
+
+The $R^{2}$ for our test dataset is **0.4004** - not quite as good as it was for the training set. 
+
+(e) Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?
+
+```{r}
+library(glmnet)
+chem_ridge_f <- glmnet(as.matrix(train_x_set),
+                          train_y_set,
+                          alpha = 0,
+                          lambda = 1.5
+                       )
+coef(chem_ridge_f)
+```
+
+The strongest 3 predictors in our model appear to be `ManufacturingProcess20` with a strong negative correlation coefficient of -0.325, `ManufacturingProcess32` with a positive coef of 0.2857 and `ManufacturingProcess06` with a coef of 0.2669. The next few are: `ManufacturingProcess09`, `ManufacturingProcess13` and `ManufacturingProcess36`. 
+
+(f) Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?
+
+From the information above, it appears that the manufacturing processes are stronger predictors than the Biological Materials involved, suggesting that focusing on including certain processes (32, 6 and 9) while eliminating the use of others (20, 13, 36) may be the best way to improve the overall yield. 
