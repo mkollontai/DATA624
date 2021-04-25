@@ -1,0 +1,167 @@
+---
+title: "624 Final Project EDA"
+author: "Jeff Shamp"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---
+
+## Takeaways
+
+1. target variable is normally distributed and numeric
+2. MICE the imputation because it works and there isn't much to impute
+3. Need to think about outliers. Probably IQR or 3/4 standard deviations, but should be careful to check that we aren't dropping data from one brand code. If we lin reg it, Cooke's distance
+4. Brand codes are meaningful. either classifier to predict categories and regress, or tree boost in regression mode. 
+5. Leaning toward tree boost as the correlations aren't amazing...but not terrible either. 
+6. Consider feature reduction...??
+
+
+## Data Load - Target Distribution
+
+```{r message=FALSE, warning=FALSE}
+library(tidymodels)
+library(moments)
+library(readxl)
+library(baguette)
+library(randomForest)
+library(ranger)
+library(kknn)
+```
+
+```{r}
+data <- read_excel('StudentData.xlsx')
+head(data)
+```
+
+```{r}
+data %>%
+  ggplot(aes(x=PH)) +
+  geom_histogram(binwidth = .01)
+```
+
+### Imputation
+
+```{r}
+data<- 
+  data %>%
+  mutate(`Mnf Flow` = replace(`Mnf Flow`, `Mnf Flow`< 10, NA)) %>%
+  mutate_if(is.character, factor)
+```
+
+
+```{r}
+set.seed(312)
+data_split <-initial_split(data, prop=.80)
+train_data <- training(data_split)
+test_data <- testing(data_split)
+
+ph_recipe<-
+  recipe(PH ~ ., data=train_data) %>%
+  #update_role(`Brand Code`, new_role = "brand") %>%
+  step_center(all_numeric(), -all_outcomes()) %>%
+  step_BoxCox(all_numeric(), -all_outcomes()) %>%
+  step_impute_knn(all_predictors()) %>%
+  step_naomit(all_outcomes())
+
+ph_training <- ph_recipe %>%
+  prep() %>%
+  juice()
+ph_testing <- ph_recipe %>%
+  prep() %>%
+  bake(test_data)
+```
+
+```{r}
+####Linear Regression Model##########################################
+lr_model <- linear_reg() %>%
+  set_engine("lm") 
+
+lr_model_fit <- lr_model %>%
+  fit(PH ~ ., ph_training)
+
+
+lr_wflow <- workflow() %>%
+  add_model(lr_model) %>%
+  add_formula(PH ~ .) %>%
+  fit(ph_training)
+
+lr_pred <- predict(lr_wflow, ph_testing) %>%
+  bind_cols(ph_testing)
+
+lr_pred$Delta <- lr_pred$PH - lr_pred$.pred
+
+lr_model_fit %>%
+  predict(ph_testing) %>%
+  bind_cols(ph_testing) %>%
+  metrics(truth = PH, estimate = .pred)
+#predict(lr_model,ph_testing)
+```
+
+```{r}
+###Random Forest 'randomForest' Model################################
+rf_model <- rand_forest(trees = 100, mode = "regression") %>%
+  set_engine("randomForest") %>%
+  fit(PH ~ ., ph_training)
+
+rf_model %>%
+  predict(ph_testing) %>%
+  bind_cols(ph_testing) %>%
+  metrics(truth = PH, estimate = .pred)
+#predict(rf_model,ph_testing)
+```
+
+```{r}
+###Random Forest 'ranger' Model######################################
+ranger_model <- rand_forest(trees = 100, mode = "regression") %>%
+  set_engine("ranger") %>%
+  fit(PH ~ ., ph_training)
+
+ranger_model %>%
+  predict(ph_testing) %>%
+  bind_cols(ph_testing) %>%
+  metrics(truth = PH, estimate = .pred)
+#predict(ranger_model,ph_testing)
+```
+
+```{r}
+###k-Nearest Neighbors Model#########################################
+knn_model <- nearest_neighbor(neighbors = 10) %>%
+  set_mode(mode = "regression") %>%
+  set_engine("kknn") %>%
+  fit(PH ~., ph_training)
+
+knn_model %>%
+  predict(ph_testing) %>%
+  bind_cols(ph_testing) %>%
+  metrics(truth = PH, estimate = .pred)
+#predict(knn_model,ph_testing)
+```
+
+```{r}
+###Regressive Tree Model#############################################
+library(rpart.plot)
+tree_model <- rpart(PH ~ ., data = ph_training, control = rpart.control(minsplit = 10, maxdepth = 5, cp = 0.00001))
+printcp(tree_model)
+plotcp(tree_model)
+#summary(tree_model)
+
+bestcp <- tree_model$cptable[which.min(tree_model$cptable[,"xerror"]),"CP"]
+tree_pruned <- (prune(tree_model, cp= bestcp))
+#tree_pruned
+prp(tree_pruned, faclen = 0, cex = 0.8, extra = 1)
+
+tree_pred <- tree_model %>%
+  predict(ph_testing) %>%
+  bind_cols(ph_testing) %>%
+  glimpse()
+names(tree_pred)[1] <- "Prediction"
+
+tree_pred %>%
+  metrics(truth = PH, estimate = Prediction)
+```
+
+Random Forest 'randomForest' engine model appears to have the most promising metrics. 
+
+
