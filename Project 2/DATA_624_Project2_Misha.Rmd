@@ -1,6 +1,6 @@
 ---
 title: "624 Final Project EDA"
-author: "Jeff Shamp"
+author: "Jeff Shamp, Misha Kollontai, John Kellogg"
 date: "`r Sys.Date()`"
 output:
   prettydoc::html_pretty:
@@ -8,14 +8,10 @@ output:
     highlight: github
 ---
 
-## Takeaways
+## Intro
 
-1. target variable is normally distributed and numeric
-2. MICE the imputation because it works and there isn't much to impute
-3. Need to think about outliers. Probably IQR or 3/4 standard deviations, but should be careful to check that we aren't dropping data from one brand code. If we lin reg it, Cooke's distance
-4. Brand codes are meaningful. either classifier to predict categories and regress, or tree boost in regression mode. 
-5. Leaning toward tree boost as the correlations aren't amazing...but not terrible either. 
-6. Consider feature reduction...??
+Working off of work started by Jeff in 
+https://github.com/Shampjeff/cuny_msds/blob/master/DATA_624/final_project/final_eda.Rmd
 
 
 ## Data Load - Target Distribution
