@@ -1,0 +1,166 @@
+---
+title: "DATA624 HW8"
+author: "M Kollontai"
+date: "4/14/2021"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(fpp2)
+library(mlbench)
+library(caret)
+library(kernlab)
+library(dplyr)
+library(earth)
+```
+
+# Questions
+
+## **7.2: ** 
+
+Friedman (1991) introduced several benchmark data sets create by simulation. One of these simulations used the following nonlinear equation to create data:$$y = 10sin(\pi x_{1}x_{2}) + 20(x_{3} − 0.5)^{2} + 10x_{4} + 5x_{5} + N(0, \sigma^{2})$$ where the x values are random variables uniformly distributed between [0, 1] (there are also 5 other non-informative variables also created in the simulation). The package `mlbench` contains a function called $mlbench.friedman1$ that simulates these data:
+
+```{r}
+set.seed(200)
+trainingData <- mlbench.friedman1(200, sd = 1)
+## We convert the 'x' data from a matrix to a data frame
+## One reason is that this will give the columns names.
+trainingData$x <- data.frame(trainingData$x)
+
+## Look at the data using
+featurePlot(trainingData$x, trainingData$y)
+## or other methods.
+
+## This creates a list with a vector 'y' and a matrix
+## of predictors 'x'. Also simulate a large test set to
+## estimate the true error rate with good precision:
+testData <- mlbench.friedman1(5000, sd = 1)
+testData$x <- data.frame(testData$x)
+```
+Tune several models on these data. For example:
+
+### k-Nearest Neighbors
+
+```{r}
+knnModel <- train(x = trainingData$x,
+                  y = trainingData$y,
+                  method = "knn",
+                  preProc = c("center", "scale"),
+                  tuneLength = 10)
+knnModel
+```
+
+### SVM
+
+```{r}
+svmModel <- train(x = trainingData$x,
+                  y = trainingData$y,
+                  method = "svmRadial",
+                  preProc = c("center", "scale"),
+                  tuneLength = 10,
+                  trcontrol = trainControl(method = "cv"))
+svmModel
+```
+
+### MARS
+
+```{r}
+MarsModel <- earth(x = trainingData$x,
+                  y = trainingData$y)
+MarsModel
+```
+
+Which models appear to give the best performance? Does MARS select the informative predictors (those named X1–X5)?
+
+The "best" model appears to be the MARS model with an $R_{2} = 0.918$. The model selected 6 of the 10 predictors as significant, erroneously also including X6 (though it is the least important of the 6 selected).
+
+
+## **7.5: ** 
+
+Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.
+
+
+```{r}
+library(AppliedPredictiveModeling)
+library(RANN)
+data(ChemicalManufacturingProcess)
+
+(Chem_Imp <- preProcess(ChemicalManufacturingProcess[,-c(1)], method=c('knnImpute')))
+
+chem_mod <- predict(Chem_Imp, ChemicalManufacturingProcess[,-c(1)])
+remove_cols <- nearZeroVar(chem_mod, names = TRUE, 
+                           freqCut = 2, uniqueCut = 20)
+all_cols <- colnames(chem_mod)
+chem_mod <- chem_mod[ , setdiff(all_cols,remove_cols)]
+#chem_mod <- chem_mod[-c(2,3,4,59,172,173,175),]
+train_row <- sort(sample(nrow(chem_mod), nrow(chem_mod)*.7))
+train_x_set <- chem_mod[train_row,]
+test_x_set <- chem_mod[-train_row,]
+train_y_set <- ChemicalManufacturingProcess[train_row,1]
+test_y_set <- ChemicalManufacturingProcess[-train_row,1]
+```
+
+### (a) 
+
+Which nonlinear regression model gives the optimal resampling and test set performance?
+
+#### kNN
+
+```{r}
+knnModel <- train(x = train_x_set,
+                  y = train_y_set,
+                  method = "knn",
+                  preProc = c("center", "scale"),
+                  tuneLength = 10)
+knnModel
+```
+
+### SVM
+
+```{r}
+svmModel <- train(x = train_x_set,
+                  y = train_y_set,
+                  method = "svmRadial",
+                  preProc = c("center", "scale"),
+                  tuneLength = 10,
+                  trcontrol = trainControl(method = "cv"))
+svmModel
+```
+
+### MARS
+
+```{r}
+MarsModel <- earth(x = train_x_set,
+                  y = train_y_set)
+MarsModel
+plot(MarsModel, which = 1)
+```
+
+Based on the $R_{2}$ values, the MARS model appears to be the best test set performance - only 9 predictors are selected in this model.
+
+### (b) 
+
+Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
+
+```{r}
+evimp(MarsModel)
+```
+Manufacturing processes dominate this list similar to that of our optimal linear model. 
+
+The linear model from our results for question 6.3 found Manufacturing Processes 20, 32, 6, 9, 13 and 36 as the most important. 3 of these predictors are also present in our MARS model above. 
+
+### (c) 
+
+Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
+
+```{r}
+best_pred <- c("ManufacturingProcess32", "ManufacturingProcess09", "ManufacturingProcess13","ManufacturingProcess01", "ManufacturingProcess42","ManufacturingProcess43")
+featurePlot(train_x_set[,best_pred], train_y_set)
+```
+
+Manufacturing processes 9 and 32 seem to have positive relationships with our predictor, while Process 13 shows a similar negative relationship.  The relationships for Processes 1, 42 and 43 seem to be largely influenced by outliers in the data - though removing these outliers before the modelin led to significant drops in the accuracy of the models, suggesting they are not neccessarily erroneous datapoints. 
