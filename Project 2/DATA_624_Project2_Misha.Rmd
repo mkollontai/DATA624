@@ -213,21 +213,6 @@ models <- list(lr_model_fit,rf_model,ranger_model,knn_model)
 (model_test <- model_metrics(models,ph_testing))
 ```
 
-run_test_data <- function(mods, testX, testY){
-  meths <- c()
-  RMSEs <- c()
-  R_SQs <- c()
-  for (m in mods){
-    meths <- c(meths,m$method)
-    prediction <- predict(m,testX)
-    RMSEs <- c(RMSEs, Metrics::rmse(testY,prediction))
-    R_SQs <- c(R_SQs, cor(testY,prediction)^2)
-  }
-  df <- data.frame(rbind(RMSEs,R_SQs))
-  names(df) <- meths
-  return(df)
-```
-
 Random Forest 'randomForest' engine model appears to have the most promising metrics. 
 
 
