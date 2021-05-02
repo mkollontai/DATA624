@@ -24,6 +24,8 @@ library(baguette)
 library(randomForest)
 library(ranger)
 library(kknn)
+library(vip)
+library(janitor)
 ```
 
 ```{r}
@@ -46,6 +48,18 @@ data<-
   mutate_if(is.character, factor)
 ```
 
+
+
+```{r}
+data %>%
+  rename(Type = `Brand Code`) %>%
+  pivot_longer(!Type,
+               names_to = "key", 
+               values_to = "value") %>%
+  ggplot(aes(value, fill=Type)) +
+  geom_histogram() +
+  facet_wrap(~key, scales = 'free')
+```
 
 ```{r}
 set.seed(312)
@@ -70,13 +84,26 @@ ph_testing <- ph_recipe %>%
 ```
 
 ```{r}
+ph_recipe %>%
+  prep() %>%
+  juice() %>%
+select(`Mnf Flow`,PH, `Alch Rel`, `Brand Code`,
+       `Carb Volume`, `Usage cont`, `Oxygen Filler`) %>%
+pivot_longer(!`Brand Code`,
+             names_to="key",
+             values_to='value') %>%
+ggplot(aes(value, fill=`Brand Code`)) +
+geom_histogram() +
+facet_wrap(~key, scales="free")
+```
+
+```{r}
 ####Linear Regression Model##########################################
 lr_model <- linear_reg() %>%
   set_engine("lm") 
 
 lr_model_fit <- lr_model %>%
   fit(PH ~ ., ph_training)
-
 
 lr_wflow <- workflow() %>%
   add_model(lr_model) %>%
@@ -143,10 +170,10 @@ printcp(tree_model)
 plotcp(tree_model)
 #summary(tree_model)
 
-bestcp <- tree_model$cptable[which.min(tree_model$cptable[,"xerror"]),"CP"]
-tree_pruned <- (prune(tree_model, cp= bestcp))
+#bestcp <- tree_model$cptable[which.min(tree_model$cptable[,"xerror"]),"CP"]
+#tree_pruned <- (prune(tree_model, cp = bestcp))
 #tree_pruned
-prp(tree_pruned, faclen = 0, cex = 0.8, extra = 1)
+#prp(tree_pruned, faclen = 0, cex = 0.8, extra = 1)
 
 tree_pred <- tree_model %>%
   predict(ph_testing) %>%
@@ -156,6 +183,49 @@ names(tree_pred)[1] <- "Prediction"
 
 tree_pred %>%
   metrics(truth = PH, estimate = Prediction)
+```
+
+```{r}
+model_metrics <- function(models,test_recipe){
+  mod_methods <- c()
+  mod_metrics <- NULL %>%
+    rbind(c('RMSE','RSQ','MAE'))
+  for (model in models){
+    #browser()
+    (mod_methods <- c(mod_methods,model$spec$engine))
+    prediction <- predict(model,test_recipe)
+    pred_metrics <- prediction %>%
+      bind_cols(test_recipe) %>%
+      metrics(truth = PH, estimate = .pred) %>%
+      pull(.estimate)
+    mod_metrics <- rbind.data.frame(mod_metrics,pred_metrics)
+  }
+  mod_metrics <- mod_metrics %>%
+    row_to_names(row_number = 1)
+  rownames(mod_metrics) <- mod_methods
+  
+  return(mod_metrics)
+}
+```
+
+```{r}
+models <- list(lr_model_fit,rf_model,ranger_model,knn_model)
+(model_test <- model_metrics(models,ph_testing))
+```
+
+run_test_data <- function(mods, testX, testY){
+  meths <- c()
+  RMSEs <- c()
+  R_SQs <- c()
+  for (m in mods){
+    meths <- c(meths,m$method)
+    prediction <- predict(m,testX)
+    RMSEs <- c(RMSEs, Metrics::rmse(testY,prediction))
+    R_SQs <- c(R_SQs, cor(testY,prediction)^2)
+  }
+  df <- data.frame(rbind(RMSEs,R_SQs))
+  names(df) <- meths
+  return(df)
 ```
 
 Random Forest 'randomForest' engine model appears to have the most promising metrics. 
