@@ -51,7 +51,8 @@ data %>%
 data<- 
   data %>%
   mutate(`Mnf Flow` = replace(`Mnf Flow`, `Mnf Flow`< 10, NA)) %>%
-  mutate_if(is.character, factor)
+  mutate_if(is.character, factor) %>%
+  rename(Brand = 'Brand Code')
 ```
 
 
@@ -74,7 +75,7 @@ train_data <- training(data_split)
 test_data <- testing(data_split)
 
 ph_recipe <-
-  recipe(PH ~ ., data=train_data) %>%
+  recipe(PH ~ ., data=data) %>%
   #update_role(`Brand Code`, new_role = "brand") %>%
   step_center(all_numeric(), -all_outcomes()) %>%
   step_BoxCox(all_numeric(), -all_outcomes()) %>%
@@ -92,17 +93,15 @@ ph_testing <- ph_recipe %>%
 ```
 
 ```{r}
-ph_recipe %>%
-  prep() %>%
-  juice() %>%
-select(`Mnf Flow`,PH, `Alch Rel`, `Brand Code`,
+ph_training %>%
+  select(`Mnf Flow`,PH, `Alch Rel`, `Brand`,
        `Carb Volume`, `Usage cont`, `Oxygen Filler`) %>%
-pivot_longer(!`Brand Code`,
+  pivot_longer(!`Brand`,
              names_to="key",
              values_to='value') %>%
-ggplot(aes(value, fill=`Brand Code`)) +
-geom_histogram() +
-facet_wrap(~key, scales="free")
+  ggplot(aes(value, fill=`Brand`)) +
+    geom_histogram() +
+    facet_wrap(~key, scales="free")
 ```
 
 ```{r}
@@ -123,10 +122,10 @@ lr_pred <- predict(lr_wflow, ph_testing) %>%
 
 lr_pred$Delta <- lr_pred$PH - lr_pred$.pred
 
-lr_model_fit %>%
-  predict(ph_testing) %>%
-  bind_cols(ph_testing) %>%
-  metrics(truth = PH, estimate = .pred)
+# lr_model_fit %>%
+#   predict(ph_testing) %>%
+#   bind_cols(ph_testing) %>%
+#   metrics(truth = PH, estimate = .pred)
 #predict(lr_model,ph_testing)
 ```
 
@@ -136,10 +135,10 @@ rf_model <- rand_forest(trees = 100, mode = "regression") %>%
   set_engine("randomForest") %>%
   fit(PH ~ ., ph_training)
 
-rf_model %>%
-  predict(ph_testing) %>%
-  bind_cols(ph_testing) %>%
-  metrics(truth = PH, estimate = .pred)
+# rf_model %>%
+#   predict(ph_testing) %>%
+#   bind_cols(ph_testing) %>%
+#   metrics(truth = PH, estimate = .pred)
 #predict(rf_model,ph_testing)
 ```
 
@@ -149,10 +148,10 @@ ranger_model <- rand_forest(trees = 100, mode = "regression") %>%
   set_engine("ranger") %>%
   fit(PH ~ ., ph_training)
 
-ranger_model %>%
-  predict(ph_testing) %>%
-  bind_cols(ph_testing) %>%
-  metrics(truth = PH, estimate = .pred)
+# ranger_model %>%
+#   predict(ph_testing) %>%
+#   bind_cols(ph_testing) %>%
+#   metrics(truth = PH, estimate = .pred)
 #predict(ranger_model,ph_testing)
 ```
 
@@ -163,10 +162,10 @@ knn_model <- nearest_neighbor(neighbors = 10) %>%
   set_engine("kknn") %>%
   fit(PH ~., ph_training)
 
-knn_model %>%
-  predict(ph_testing) %>%
-  bind_cols(ph_testing) %>%
-  metrics(truth = PH, estimate = .pred)
+# knn_model %>%
+#   predict(ph_testing) %>%
+#   bind_cols(ph_testing) %>%
+#   metrics(truth = PH, estimate = .pred)
 #predict(knn_model,ph_testing)
 ```
 
@@ -235,7 +234,7 @@ models <- list(lr_model_fit,rf_model,ranger_model,knn_model,cubist_model)
 ```{r}
 cube_grid <- expand.grid(committees = 1:30, neighbors = c(1, 3, 5, 7, 9))
 set.seed(44)
-folds <- vfold_cv(ph_training[,-1])
+folds <- vfold_cv(ph_training)
 
 cubist_model <- cubist_rules(committees = tune(), neighbors = tune()) %>%
   set_engine("Cubist")
