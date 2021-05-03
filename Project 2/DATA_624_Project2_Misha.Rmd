@@ -16,7 +16,7 @@ https://github.com/Shampjeff/cuny_msds/blob/master/DATA_624/final_project/final_
 
 ## Data Load - Target Distribution
 
-```{r message=FALSE, warning=FALSE}
+```{r message=FALSE, echo = FALSE, warning=FALSE}
 library(tidymodels)
 library(moments)
 library(readxl)
@@ -28,44 +28,87 @@ library(vip)
 library(janitor)
 library(Cubist)
 library(rules)
-```
-
-```{r}
 sessionInfo()
 ```
+## Intro
 
-```{r}
-data <- read_excel('StudentData.xlsx')
-head(data)
-```
+In order to better understand the manufacturing process within ABC Beverage, we endeavored to model the pH output within our plant based on all available predictive factors. The goal was to identify the predictors that are most indicative of the final pH value of our product as well as providing a model that sufficiently accurately predicts pH based on given values of predictors. This report could then be used to more efficiently steer manufacturing processes towards a desired pH level with (ideally) the minimum required changes to setting within the overall system.
 
-```{r}
+## Data Exploration
+
+The available data for our analysis included the output pH value along with 32 predictor variables for a set of 2,571 observations. The predictor variables include one categorical variable for the `Brand` associated with each observation; each other predictor is a numerical setting within our manufacturing process including various pressure measures, temperature settings, fill levels, etc. In a significant portion of the available data, there is a measurement missing for at least one predictor of a given observation (1,483 of 2,571). The output variable PH is fairly normally distributed around a mean of 8.55 as can be seen in the graph below.
+
+```{r, echo = FALSE, warning = FALSE}
+data <- read_excel('StudentData.xlsx') %>%
+  mutate_if(is.character, factor) %>%
+  rename(Brand = 'Brand Code')
+#head(data)
+
 data %>%
   ggplot(aes(x=PH)) +
-  geom_histogram(binwidth = .01)
+  geom_histogram(binwidth = .01) +
+  geom_vline(xintercept = mean(data$PH, na.rm = TRUE), linetype ='dashed',
+             color = 'blue', size = 1)
 ```
 
 ### Imputation
 
-```{r}
-data<- 
-  data %>%
-  mutate(`Mnf Flow` = replace(`Mnf Flow`, `Mnf Flow`< 10, NA)) %>%
-  mutate_if(is.character, factor) %>%
-  rename(Brand = 'Brand Code')
+Before any models could be generated from this dataset, the large number of missing data needed to be addressed. Below we can see that 3 predictors were missing data in more than 2% of observations and 11 in at least 1% of observations. 
+
+```{r, echo = FALSE}
+pct_null <- data.frame(do.call("rbind", map(data,
+                                            ~ mean(is.na(.)))))
+colnames(pct_null) <- c('PCT_NULL')
+
+totalNulls <- pct_null %>%
+  mutate(VARIABLE = rownames(.)) %>%
+  arrange(desc(PCT_NULL)) %>%
+  filter(PCT_NULL > 0) %>%
+  dplyr::select(VARIABLE, PCT_NULL)
+
+ggplot(totalNulls, aes(x = reorder(VARIABLE, PCT_NULL), y = PCT_NULL,
+                       label = round(PCT_NULL*100, 1))) + 
+  geom_text(vjust = 0.5, hjust = -0.05)+
+  geom_bar(stat = "identity") +
+  ggtitle("Variables with Missing Information") +
+  xlab("Statistic") + ylab("Percent Missing") + 
+  scale_y_continuous(labels=scales::percent, limits = c(0,0.1)) +  
+  coord_flip() + expand_limits(y = 1)
 ```
 
+Before imputing the "missing" data, we decided to look over some of the variables and determine if any of the information appeared erroneous. This would entail a datapoint where the value wasn't missing, but simply did not make sense (i.e. a negative number for a variable where that is impossible). To start we looked over how many outliers were present in the predictors. 
 
+```{r, warning = FALSE, echo = FALSE}
+totalOutliers <- data.frame(
+  sapply(data %>% select(-PH,-`Brand`), 
+       function(x){length(boxplot.stats(x)$out)/nrow(data)}))
+totalOutliers$VARIABLE_NM <- rownames(totalOutliers)
+colnames(totalOutliers) <- c('PCT_OUTLIERS', 'VARIABLE_NM')
+ggplot(totalOutliers,
+       aes(x = reorder(VARIABLE_NM, PCT_OUTLIERS), y=PCT_OUTLIERS,
+           label = round(PCT_OUTLIERS*100, 1))) + 
+  geom_text(vjust = 0.5, hjust = -0.05)+ geom_bar(stat = "identity") +
+  ggtitle("Variables with Outliers") + xlab("Statistic") +
+  ylab("Percent of Data that is an Outlier") + 
+  scale_y_continuous(labels=scales::percent, limits = c(0,0.2)) +  
+  coord_flip()
+```
 
-```{r}
-data %>%
-  rename(Type = `Brand`) %>%
-  pivot_longer(!Type,
-               names_to = "key", 
-               values_to = "value") %>%
-  ggplot(aes(value, fill=Type)) +
-  geom_histogram() +
-  facet_wrap(~key, scales = 'free')
+Though a significant number of predictors appears to contain a lot of outliers, not many of it appears to be "erroneous". A slight dig into each predictor yielded three that contained datapoints that appeared to have either been recorded in error or incorrectly entered. The three variables in question are `Mnf Flow`, `Hyd Pressure1` and `Hyd Pressure3`. For each of these 3 variables negative values don't makes sense since neither flow rate nor hydraulic pressure are unlikely to be negative by design. Each negative entry for `Mnf Flow` is at -100 as opposed to a spread of values and the negative hydraulic pressure values are all slightly below 0. 
+
+```{r, echo = FALSE, warning = FALSE}
+ggplot(data, aes(x=`Mnf Flow`, y = PH)) + geom_point()
+ggplot(data, aes(x=`Hyd Pressure1`, y = PH)) + geom_point()
+ggplot(data, aes(x=`Hyd Pressure3`, y = PH)) + geom_point()
+```
+
+Our solution to the seemingly erroneous data was to convert negative Hydraulic Pressure and 'Mnf Flow' readings with NA's so they wiould be imputed along with the information that was missing from the get-go.
+
+```{r, echo = FALSE}
+data <- data %>%
+  mutate(`Mnf Flow` = replace(`Mnf Flow`, `Mnf Flow`< 10, NA)) %>%
+  mutate(`Hyd Pressure1` = replace(`Hyd Pressure1`, `Hyd Pressure1`< 0, NA)) %>%
+  mutate(`Hyd Pressure3` = replace(`Hyd Pressure3`, `Hyd Pressure3`< 0, NA))
 ```
 
 ```{r}
