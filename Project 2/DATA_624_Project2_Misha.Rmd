@@ -51,7 +51,7 @@ data %>%
              color = 'blue', size = 1)
 ```
 
-### Imputation
+### Outliers/Erros
 
 Before any models could be generated from this dataset, the large number of missing data needed to be addressed. Below we can see that 3 predictors were missing data in more than 2% of observations and 11 in at least 1% of observations. 
 
@@ -111,7 +111,18 @@ data <- data %>%
   mutate(`Hyd Pressure3` = replace(`Hyd Pressure3`, `Hyd Pressure3`< 0, NA))
 ```
 
-```{r}
+### Imputation
+
+In order to prepare the data for modeling we first split the data into training/testing sets along an 80/20 percentage split, and utilized the `tidymodels` package within R to create what is known as a `recipe`. This `recipe` outlines the following steps that are then followed in order to pre-process a given dataset:
+
+1. Specifies $PH$ as the predicted variable within the dataset
+2. Centers all numeric predictors, normalizing them around 0
+3. Performs a BoxCox transformation on numeric predictors
+4. Runs a k-Nearest Neighbor imputation on all missing data (NAs)
+5. converts all nominal predictors (`Brand`) into dummy variables
+6. Removes observations for which the predicted variable (`PH`) is missing
+
+```{r, echo = FALSE}
 set.seed(312)
 data_split <-initial_split(data, prop=.80)
 train_data <- training(data_split)
@@ -135,80 +146,45 @@ ph_testing <- ph_recipe %>%
   bake(test_data)
 ```
 
+## Model Creation
 
-```{r}
+After identifying erroneous data, replacing it with NAs and specifying the pre-processing approach, several models were generated. The models created and evaluated against the training data are as follows:
+
+* Linear Regression
+* Random Forest (randomForest engine)
+* Random Forest (ranger engine)
+* k-Nearest Neighbors
+* Cubist
+
+```{r, echo = FALSE}
 ####Linear Regression Model##########################################
 lr_model <- linear_reg() %>%
-  set_engine("lm") 
-
-lr_model_fit <- lr_model %>%
+  set_engine("lm") %>%
   fit(PH ~ ., ph_training)
 
-lr_wflow <- workflow() %>%
-  add_model(lr_model) %>%
-  add_formula(PH ~ .) %>%
-  fit(ph_training)
-
-lr_pred <- predict(lr_wflow, ph_testing) %>%
-  bind_cols(ph_testing)
-
-lr_pred$Delta <- lr_pred$PH - lr_pred$.pred
-
-# lr_model_fit %>%
-#   predict(ph_testing) %>%
-#   bind_cols(ph_testing) %>%
-#   metrics(truth = PH, estimate = .pred)
-#predict(lr_model,ph_testing)
-```
-
-```{r}
 ###Random Forest 'randomForest' Model################################
 rf_model <- rand_forest(trees = 100, mode = "regression") %>%
   set_engine("randomForest") %>%
   fit(PH ~ ., ph_training)
 
-# rf_model %>%
-#   predict(ph_testing) %>%
-#   bind_cols(ph_testing) %>%
-#   metrics(truth = PH, estimate = .pred)
-#predict(rf_model,ph_testing)
-```
-
-```{r}
 ###Random Forest 'ranger' Model######################################
 ranger_model <- rand_forest(trees = 100, mode = "regression") %>%
   set_engine("ranger") %>%
   fit(PH ~ ., ph_training)
 
-# ranger_model %>%
-#   predict(ph_testing) %>%
-#   bind_cols(ph_testing) %>%
-#   metrics(truth = PH, estimate = .pred)
-#predict(ranger_model,ph_testing)
-```
-
-```{r}
 ###k-Nearest Neighbors Model#########################################
 knn_model <- nearest_neighbor(neighbors = 10) %>%
   set_mode(mode = "regression") %>%
   set_engine("kknn") %>%
   fit(PH ~., ph_training)
 
-# knn_model %>%
-#   predict(ph_testing) %>%
-#   bind_cols(ph_testing) %>%
-#   metrics(truth = PH, estimate = .pred)
-#predict(knn_model,ph_testing)
-```
-
-```{r}
+###Cubist Model######################################################
 cubist_model <- cubist_rules(committees = 10, neighbors = 2) %>%
   set_engine("Cubist") %>%
   fit(PH ~., ph_training)
-
 ```
 
-```{r}
+```{r, echo = FALSE}
 model_metrics <- function(models,test_recipe){
   mod_methods <- c()
   mod_metrics <- NULL %>%
@@ -220,7 +196,7 @@ model_metrics <- function(models,test_recipe){
       bind_cols(test_recipe) %>%
       metrics(truth = PH, estimate = .pred) %>%
       pull(.estimate)
-    mod_metrics <- rbind.data.frame(mod_metrics,pred_metrics)
+    mod_metrics <- rbind.data.frame(mod_metrics,round(pred_metrics,4))
   }
   mod_metrics <- mod_metrics %>%
     row_to_names(row_number = 1)
@@ -230,15 +206,18 @@ model_metrics <- function(models,test_recipe){
 }
 ```
 
-```{r}
-models <- list(lr_model_fit,rf_model,ranger_model,knn_model,cubist_model)
+The models were fit to the training dataset and then each was evaluated against the test set for accuracy metrics. Below is a table summarizing 3 performance metrics for each of the 5 evaluated models: Root Mean Square Error (RMSE), R-Squared (RSQ) and Mean Absolute Error (MAE). 
+
+```{r, echo = false}
+models <- list(lr_model,rf_model,ranger_model,knn_model,cubist_model)
 (model_test <- model_metrics(models,ph_testing))
 ```
 
-
+Based on each of the three performance metrics, the Cubist model appears to be the most accurate in predicting our test data. For each model a set of parameters was taken for the initial model at random - since the Cubist model appears to be the most accurate, a tuning algorithm was applied to this model in order to identify optimal parameters. The tuning was performed across a wide range of the two input parameters ($committees$, $neighbors$); below is a plot visualizing only the final stage of this refinement in order to simplify the factors at play:
 
 ```{r}
-cube_grid <- expand.grid(committees = 1:20, neighbors = c(5, 7, 9))
+full_cube_grid <- expand.grid(committees = 5:35, neighbors = c(1, 7, 9))
+sub_cube_grid <- expand.grid(committees = 5:15, neighbors = c(2, 7))
 set.seed(44)
 folds <- vfold_cv(train_data)
 
@@ -246,7 +225,7 @@ cubist_model <- cubist_rules(committees = tune(), neighbors = tune()) %>%
   set_engine("Cubist")
 
 cube_tune_res <- cubist_model %>%
-  tune_grid(PH ~ ., resamples = folds, grid = cube_grid)
+  tune_grid(PH ~ ., resamples = folds, grid = sub_cube_grid)
 ```
 
 ```{r}
@@ -273,6 +252,13 @@ cube_tune_res %>%
 
 
 ```{r}
+show_best(cube_tune_res, metric = "rmse")
+smallest_rmse <- select_best(cube_tune_res, metric = "rmse")
+final_cubist_model <-
+  cubist_model %>%
+  finalize_model(smallest_rmse) %>%
+  fit(PH ~., ph_training)
+
 cubist_model_tuned <- cubist_rules(committees = 12, neighbors = 7) %>%
   set_engine("Cubist") %>%
   fit(PH ~., ph_training)
@@ -280,7 +266,9 @@ cubist_model_tuned <- cubist_rules(committees = 12, neighbors = 7) %>%
 ```
 
 ```{r}
-models <- list(lr_model_fit,rf_model,ranger_model,knn_model, cubist_model_tuned)
+models <- list(lr_model,rf_model,ranger_model,knn_model, final_cubist_model)
 (model_test <- model_metrics(models,ph_testing))
 ```
+
+Tuning the model in terms of the Committee and Neighbors parameters does not seem to improve the performance against our test set, suggesting some overfitting to the training data. We settled on using the original cubist model to move forward with our predictions. 
 
