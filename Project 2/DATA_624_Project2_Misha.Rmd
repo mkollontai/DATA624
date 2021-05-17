@@ -182,6 +182,12 @@ cubist_model <- cubist_rules(committees = 10, neighbors = 2) %>%
   fit(PH ~., ph_training)
 ```
 
+```{r}
+cubist_model <- cubist(committees = 10, neighbors = 2) %>%
+  set_engine("Cubist") %>%
+  fit(PH ~., ph_training)
+```
+
 ```{r, echo = FALSE}
 model_metrics <- function(models,test_recipe){
   mod_methods <- c()
@@ -217,15 +223,25 @@ Tuning the best-performing Cubist model in terms of the Committee and Neighbors 
 ### Variable Importance
 
 ```{r, echo = FALSE}
-train_x <- data.frame(ph_training[,-which(names(ph_training)=='PH')])
-train_y <- ph_training$PH
-
-cube_model <- cubist(x = train_x,
-                     y = train_y,
-                     committees = 10,
-                     neighbors= 2)
-vi(cube_model)
+x <- cubist_model$fit$usage[0:20,]
+x
 ```
+
+Within our model, it appears that the strongest predictors for subsetting the dataset are:
+
+1. `Bowl Setpoint`
+2. `Usage.cont`
+3. `Pressure.Vacuum`
+4. `Brand_C`
+5. `Temperature` 
+
+For the linear models then built within these subsets, the strongest predictors are:
+
+1. `Balling.lvl`
+2. `Balling`
+3. `Density`
+4. `Alch.Rel`
+5. `Pressure Vacuum`
 
 ## Prediction
 
@@ -244,26 +260,6 @@ final_data <-
   prep(training= train_data) %>%
   bake(new_data=eval_data)
 ```
-
-
-```{r}
-# FIND VARIABLE IMPORTANCE
-# cubist_var_imp<-
-#   workflow() %>%
-#   add_recipe(ph_recipe) %>%
-#   add_model(cubist_model)
-# 
-# final_var_imp <-
-#   finalize_workflow(
-#     cubist_var_imp,
-#     smallest_rmse
-# )
-# 
-# final_var_imp %>%
-#   fit(data = train_data) %>%
-#   pull_workflow_fit()
-```
-
 
 
 ```{r predict, echo=FASLE}
