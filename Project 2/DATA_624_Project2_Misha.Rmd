@@ -1,11 +1,8 @@
 ---
-title: "624 Final Project EDA"
+title: "PH Production Report"
 author: "Jeff Shamp, Misha Kollontai, John Kellogg"
 date: "`r Sys.Date()`"
-output:
-  prettydoc::html_pretty:
-    theme: architect
-    highlight: github
+output: word_document
 ---
 
 ## Intro
@@ -28,6 +25,8 @@ library(vip)
 library(janitor)
 library(Cubist)
 library(rules)
+library(caret)
+library(dplyr)
 sessionInfo()
 ```
 ## Intro
@@ -130,7 +129,6 @@ test_data <- testing(data_split)
 
 ph_recipe <-
   recipe(PH ~ ., data=data) %>%
-  #update_role(`Brand Code`, new_role = "brand") %>%
   step_center(all_numeric(), -all_outcomes()) %>%
   step_BoxCox(all_numeric(), -all_outcomes()) %>%
   step_impute_knn(all_predictors()) %>%
@@ -213,62 +211,52 @@ models <- list(lr_model,rf_model,ranger_model,knn_model,cubist_model)
 (model_test <- model_metrics(models,ph_testing))
 ```
 
-Based on each of the three performance metrics, the Cubist model appears to be the most accurate in predicting our test data. For each model a set of parameters was taken for the initial model at random - since the Cubist model appears to be the most accurate, a tuning algorithm was applied to this model in order to identify optimal parameters. The tuning was performed across a wide range of the two input parameters ($committees$, $neighbors$); below is a plot visualizing only the final stage of this refinement in order to simplify the factors at play:
 
-```{r}
-full_cube_grid <- expand.grid(committees = 5:35, neighbors = c(1, 7, 9))
-sub_cube_grid <- expand.grid(committees = 5:15, neighbors = c(2, 7))
-set.seed(44)
-folds <- vfold_cv(train_data)
+Tuning the best-performing Cubist model in terms of the Committee and Neighbors parameters did not seem to improve the performance against our test set, suggesting some overfitting to the training data. We settled on using the original cubist model to move forward with our predictions. 
 
-cubist_model <- cubist_rules(committees = tune(), neighbors = tune()) %>%
-  set_engine("Cubist")
+## Prediction
 
-cube_tune_res <- cubist_model %>%
-  tune_grid(PH ~ ., resamples = folds, grid = sub_cube_grid)
-```
+With our final Cubist model we will predict values given our test set. See attached `.xlsx` file. 
 
-```{r}
-cube_tune_res %>%
-  collect_metrics() %>%
-  filter(.metric == "rmse") %>%
-  mutate(neighbors = factor(neighbors)) %>%
-  ggplot(aes(x = committees, y = mean, col = neighbors)) +
-  geom_point() +
-  geom_line() +
-  scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = "top")
-
-cube_tune_res %>%
-  collect_metrics() %>%
-  filter(.metric == "rsq") %>%
-  mutate(neighbors = factor(neighbors)) %>%
-  ggplot(aes(x = committees, y = mean, col = neighbors)) +
-  geom_point() +
-  geom_line() +
-  scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = "top")
+```{r test_data_load, echo=FALSE}
+eval_data <- read_excel('StudentEvaluation.xlsx') %>%
+  mutate_if(is.character, factor) %>%
+  rename(Brand = 'Brand Code')
+eval_data <- test_data %>%
+  mutate(`Mnf Flow` = replace(`Mnf Flow`, `Mnf Flow`< 10, NA)) %>%
+  mutate(`Hyd Pressure1` = replace(`Hyd Pressure1`, `Hyd Pressure1`< 0, NA)) %>%
+  mutate(`Hyd Pressure3` = replace(`Hyd Pressure3`, `Hyd Pressure3`< 0, NA))
+final_data <- 
+  ph_recipe %>%
+  prep(training= train_data) %>%
+  bake(new_data=eval_data)
 ```
 
 
 ```{r}
-show_best(cube_tune_res, metric = "rmse")
-smallest_rmse <- select_best(cube_tune_res, metric = "rmse")
-final_cubist_model <-
-  cubist_model %>%
-  finalize_model(smallest_rmse) %>%
-  fit(PH ~., ph_training)
-
-cubist_model_tuned <- cubist_rules(committees = 12, neighbors = 7) %>%
-  set_engine("Cubist") %>%
-  fit(PH ~., ph_training)
-
+# FIND VARIABLE IMPORTANCE
+# cubist_var_imp<-
+#   workflow() %>%
+#   add_recipe(ph_recipe) %>%
+#   add_model(cubist_model)
+# 
+# final_var_imp <-
+#   finalize_workflow(
+#     cubist_var_imp,
+#     smallest_rmse
+# )
+# 
+# final_var_imp %>%
+#   fit(data = train_data) %>%
+#   pull_workflow_fit()
 ```
 
-```{r}
-models <- list(lr_model,rf_model,ranger_model,knn_model, final_cubist_model)
-(model_test <- model_metrics(models,ph_testing))
+
+
+```{r predict, echo=FASLE}
+eval_pred<- predict(cubist_model, final_data)
 ```
 
-Tuning the model in terms of the Committee and Neighbors parameters does not seem to improve the performance against our test set, suggesting some overfitting to the training data. We settled on using the original cubist model to move forward with our predictions. 
-
+```{r write_xls, echo=FALSE}
+writexl::write_xlsx(eval_pred, "EvaluationPredcitions.")
+```
