@@ -5,15 +5,7 @@ date: "`r Sys.Date()`"
 output: word_document
 ---
 
-## Intro
-
-Working off of work started by Jeff in 
-https://github.com/Shampjeff/cuny_msds/blob/master/DATA_624/final_project/final_eda.Rmd
-
-
-## Data Load - Target Distribution
-
-```{r message=FALSE, echo = FALSE, warning=FALSE}
+```{r message=FALSE, include = FALSE, warning=FALSE}
 library(tidymodels)
 library(moments)
 library(readxl)
@@ -182,12 +174,6 @@ cubist_model <- cubist_rules(committees = 10, neighbors = 2) %>%
   fit(PH ~., ph_training)
 ```
 
-```{r}
-cubist_model <- cubist(committees = 10, neighbors = 2) %>%
-  set_engine("Cubist") %>%
-  fit(PH ~., ph_training)
-```
-
 ```{r, echo = FALSE}
 model_metrics <- function(models,test_recipe){
   mod_methods <- c()
@@ -212,7 +198,7 @@ model_metrics <- function(models,test_recipe){
 
 The models were fit to the training dataset and then each was evaluated against the test set for accuracy metrics. Below is a table summarizing 3 performance metrics for each of the 5 evaluated models: Root Mean Square Error (RMSE), R-Squared (RSQ) and Mean Absolute Error (MAE). 
 
-```{r, echo = false}
+```{r, echo = FALSE}
 models <- list(lr_model,rf_model,ranger_model,knn_model,cubist_model)
 (model_test <- model_metrics(models,ph_testing))
 ```
@@ -223,25 +209,24 @@ Tuning the best-performing Cubist model in terms of the Committee and Neighbors 
 ### Variable Importance
 
 ```{r, echo = FALSE}
-x <- cubist_model$fit$usage[0:20,]
-x
+train_x <- data.frame(ph_training[,-which(names(ph_training)=='PH')])
+train_y <- ph_training$PH
+
+cube_model <- cubist(x = train_x,
+                     y = train_y,
+                     committees = 10,
+                     neighbors = 2)
+vi(cube_model)
 ```
 
-Within our model, it appears that the strongest predictors for subsetting the dataset are:
+Based on our model, it appears that the strongest predictors for predicting the output pH of our product are:
 
-1. `Bowl Setpoint`
-2. `Usage.cont`
-3. `Pressure.Vacuum`
-4. `Brand_C`
-5. `Temperature` 
+1. `Bowl.Setpoint`
+2. `Pressure.Vacuum`
+3. `Balling.lvl`
+4. `Temperature` 
+5. `Alch.Rel`
 
-For the linear models then built within these subsets, the strongest predictors are:
-
-1. `Balling.lvl`
-2. `Balling`
-3. `Density`
-4. `Alch.Rel`
-5. `Pressure Vacuum`
 
 ## Prediction
 
@@ -262,7 +247,7 @@ final_data <-
 ```
 
 
-```{r predict, echo=FASLE}
+```{r predict, echo=FALSE}
 eval_pred<- predict(cubist_model, final_data)
 ```
 
